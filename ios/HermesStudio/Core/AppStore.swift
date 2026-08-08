@@ -10,11 +10,14 @@ final class AppStore: ObservableObject {
     @Published var profiles: [Profile] = []
     @Published var selectedProfile = Preferences.profile
     @Published var language = Preferences.language
+    @Published private(set) var languageRefresh = 0
     @Published var appearance = Preferences.appearance
     @Published var reasoningEffort = Preferences.reasoningEffort
     @Published var errorMessage: String?
     @Published var successMessage: String?
     @Published var busy = false
+
+    private var languageRefreshTask: Task<Void, Never>?
 
     let api: APIClient
 
@@ -106,7 +109,21 @@ final class AppStore: ObservableObject {
         await boot()
     }
 
-    func setLanguage(_ value: String) { language = value; Preferences.language = value }
+    func setLanguage(_ value: String) {
+        language = value
+        Preferences.language = value
+
+        // UIKit-backed SwiftUI Lists apply their RTL mirror one render pass
+        // after the environment changes. Rebuild once more after that pass so
+        // Arabic -> System/English cannot retain mirrored glyphs. A later
+        // selection cancels the pending refresh instead of racing with it.
+        languageRefreshTask?.cancel()
+        languageRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            self?.languageRefresh &+= 1
+        }
+    }
     func setAppearance(_ value: String) { appearance = value; Preferences.appearance = value }
     func setReasoning(_ value: String) { reasoningEffort = value; Preferences.reasoningEffort = value }
 

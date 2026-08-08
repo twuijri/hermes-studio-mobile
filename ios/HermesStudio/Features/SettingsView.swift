@@ -29,8 +29,9 @@ struct SettingsView: View {
         // SwiftUI implements RTL `List` rows with an internal mirror transform.
         // Reusing those cells after Arabic -> System left the glyphs mirrored
         // even though the surrounding navigation had returned to LTR. A new
-        // list identity rebuilds the cached rows whenever language changes.
-        .id(store.language)
+        // list identity rebuilds the cached rows once immediately and once on
+        // the next settled layout pass (see AppStore.setLanguage).
+        .id("\(store.language)-\(store.languageRefresh)")
     }
 }
 
