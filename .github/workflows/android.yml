@@ -26,7 +26,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.11.1'
 
       - name: Restore signing key
         if: env.KEYSTORE_B64 != ''
@@ -47,8 +47,8 @@ jobs:
 
       # Catches a translation that dropped a key or mangled a placeholder before
       # anything is packaged. See docs/adding-a-language.md.
-      - name: Check translations
-        run: gradle --no-daemon testDebugUnitTest
+      - name: Run tests and Android lint
+        run: gradle --no-daemon testDebugUnitTest lintDebug
 
       - name: Build APK
         env:

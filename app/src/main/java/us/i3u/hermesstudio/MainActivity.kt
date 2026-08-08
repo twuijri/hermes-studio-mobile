@@ -47,6 +47,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
@@ -107,6 +108,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -124,6 +126,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -134,6 +137,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -300,6 +305,15 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
     var manage by remember { mutableStateOf<SessionSummary?>(null) }
     var rename by remember { mutableStateOf<SessionSummary?>(null) }
     var confirmDelete by remember { mutableStateOf<SessionSummary?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val visibleSessions = remember(state.sessions, query) {
+        val clean = query.trim()
+        if (clean.isBlank()) state.sessions else state.sessions.filter {
+            it.title.contains(clean, true) ||
+                it.profile.orEmpty().contains(clean, true) ||
+                it.model.orEmpty().contains(clean, true)
+        }
+    }
     val pullRefreshState = rememberPullRefreshState(
         refreshing = state.refreshingSessions,
         onRefresh = viewModel::refreshSessions,
@@ -345,24 +359,29 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
 
     Scaffold(
         topBar = {
-            StudioTopBar(
+            StudioLargeTopBar(
                 title = stringResource(R.string.chats_title),
-                leading = { AppMark(size = 30.dp, corner = 9.dp) },
-                actions = {
-                    IconButton(onClick = { viewModel.startNewConversation() }) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.action_new_chat))
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.show(Screen.Profiles) }) {
+                        ProfileAvatar(
+                            name = state.activeProfile.ifBlank { "default" },
+                            spec = state.avatarOf(state.activeProfile),
+                            size = 34.dp,
+                        )
                     }
+                },
+                actions = {
                     IconButton(
                         onClick = { viewModel.refreshSessions() },
                         enabled = !state.refreshingSessions,
                     ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh))
-                    }
-                    IconButton(onClick = { viewModel.show(Screen.Profiles) }) {
-                        Icon(Icons.Filled.Person, contentDescription = stringResource(R.string.action_profiles))
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh), tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = { viewModel.openSettings() }) {
-                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
+                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings), tint = MaterialTheme.colorScheme.primary)
+                    }
+                    IconButton(onClick = { viewModel.startNewConversation() }) {
+                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_new_chat), tint = MaterialTheme.colorScheme.primary)
                     }
                 },
             )
@@ -375,26 +394,36 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
                 .padding(padding)
                 .pullRefresh(pullRefreshState),
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                ProfileFilterRow(state, viewModel)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-                if (state.busy) LoadingRow()
-                state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
-
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    if (!state.busy && state.sessions.isEmpty()) {
-                        item { EmptyNote(stringResource(R.string.chats_empty)) }
-                    } else {
-                        item { SectionHeader(stringResource(R.string.chats_section), state.sessions.size) }
-                    }
-                    items(state.sessions) { session ->
-                        SessionRow(
-                            session = session,
-                            avatar = state.avatarOf(session.profile),
-                            onClick = { viewModel.openSession(session) },
-                            onLongClick = { manage = session },
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = StudioHorizontalPadding, end = StudioHorizontalPadding, top = 8.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { ProfileFilterRow(state, viewModel) }
+                item {
+                    StudioSearchField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = stringResource(R.string.action_search),
+                    )
+                }
+                if (state.busy) item { LoadingRow() }
+                state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
+                if (!state.busy && visibleSessions.isEmpty()) {
+                    item { EmptyNote(stringResource(R.string.chats_empty)) }
+                } else if (visibleSessions.isNotEmpty()) {
+                    item {
+                        StudioGroupedCard {
+                            visibleSessions.forEachIndexed { index, session ->
+                                SessionRow(
+                                    session = session,
+                                    avatar = state.avatarOf(session.profile),
+                                    onClick = { viewModel.openSession(session) },
+                                    onLongClick = { manage = session },
+                                )
+                                if (index != visibleSessions.lastIndex) StudioCardDivider(startIndent = 76)
+                            }
+                        }
                     }
                 }
             }
@@ -421,13 +450,13 @@ private fun SessionRow(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ProfileAvatar(
             name = session.profile.orEmpty().ifBlank { "default" },
             spec = avatar,
-            size = 40.dp,
+            size = 48.dp,
         )
         Spacer(Modifier.width(12.dp))
         Column(
@@ -435,13 +464,7 @@ private fun SessionRow(
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = session.title,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                Text(text = session.title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = formatStamp(session.updatedAt),
@@ -457,6 +480,11 @@ private fun SessionRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+        )
     }
 }
 
@@ -471,18 +499,23 @@ private fun ProfileFilterRow(state: UiState, viewModel: AppViewModel) {
     var open by remember { mutableStateOf(false) }
     val label = state.profileFilter.ifBlank { stringResource(R.string.chats_all_profiles) }
 
-    Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            onClick = { open = true },
-        ) {
+    Box {
+        StudioGroupedCard {
             Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().clickable { open = true }.padding(horizontal = 16.dp, vertical = 15.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(label, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.width(6.dp))
-                Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Filled.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(5.dp))
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${state.sessions.size} ${stringResource(R.string.chats_section)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -533,69 +566,80 @@ private fun GroupsScreen(state: UiState, viewModel: AppViewModel) {
 
     Scaffold(
         topBar = {
-            StudioTopBar(
+            StudioLargeTopBar(
                 title = stringResource(R.string.groups_title),
                 actions = {
-                    IconButton(onClick = { creating = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.groups_new))
-                    }
                     IconButton(onClick = { viewModel.refreshRooms() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh))
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh), tint = MaterialTheme.colorScheme.primary)
+                    }
+                    IconButton(onClick = { creating = true }) {
+                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.groups_new), tint = MaterialTheme.colorScheme.primary)
                     }
                 },
             )
         },
         bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (state.busy) LoadingRow()
-            state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
-
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(start = StudioHorizontalPadding, end = StudioHorizontalPadding, top = 8.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (state.busy) item { LoadingRow() }
+            state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
             if (!state.busy && state.rooms.isEmpty()) {
-                EmptyNote(stringResource(R.string.groups_empty))
-            } else {
-                SectionHeader(stringResource(R.string.groups_section), state.rooms.size)
-                LazyColumn {
-                    items(state.rooms) { room ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = { viewModel.openRoom(room) },
-                                    onLongClick = { confirmDelete = room },
-                                )
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    room.name,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                                formatStamp(room.updatedAt).takeIf { it.isNotBlank() }?.let { stamp ->
-                                    Text(
-                                        stamp,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            if (room.agentCount != null && room.memberCount != null) {
-                                Text(
-                                    stringResource(R.string.groups_counts, room.agentCount, room.memberCount),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                item { EmptyNote(stringResource(R.string.groups_empty)) }
+            } else if (state.rooms.isNotEmpty()) {
+                item {
+                    StudioGroupedCard {
+                        state.rooms.forEachIndexed { index, room ->
+                            RoomRow(
+                                room = room,
+                                onClick = { viewModel.openRoom(room) },
+                                onLongClick = { confirmDelete = room },
+                            )
+                            if (index != state.rooms.lastIndex) StudioCardDivider(startIndent = 78)
                         }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
                     }
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RoomRow(room: Room, onClick: () -> Unit, onLongClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(50.dp).clip(RoundedCornerShape(15.dp)).background(
+                Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF4389FF))),
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Groups, contentDescription = null, tint = Color.White)
+        }
+        Spacer(Modifier.width(13.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(room.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                formatStamp(room.updatedAt).takeIf { it.isNotBlank() }?.let { stamp ->
+                    Text(stamp, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (room.agentCount != null && room.memberCount != null) {
+                Text(
+                    stringResource(R.string.groups_counts, room.agentCount, room.memberCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
     }
 }
 
@@ -767,7 +811,7 @@ private fun RoomScreen(state: UiState, viewModel: AppViewModel) {
 
 // ── conversation ─────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
     var draft by rememberSaveable { mutableStateOf("") }
@@ -800,6 +844,10 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
 
     val profile = state.openSession?.profile ?: state.activeProfile
     val avatar = state.avatarOf(profile)
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = state.loadingHistory,
+        onRefresh = { viewModel.refreshConversation() },
+    )
     Scaffold(
         topBar = {
             StudioTopBar(
@@ -812,8 +860,24 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
                 },
                 onBack = { viewModel.back() },
                 actions = {
+                    if (state.openSession != null) {
+                        IconButton(
+                            onClick = { viewModel.refreshConversation() },
+                            enabled = !state.loadingHistory,
+                        ) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.action_refresh),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                     IconButton(onClick = { viewModel.startNewConversation() }) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.action_new_chat))
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.action_new_chat),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 },
             )
@@ -825,22 +889,22 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
                 .padding(padding)
                 .imePadding(),
         ) {
-            if (state.loadingHistory) LoadingRow()
-
-            if (state.lines.isEmpty() && !state.loadingHistory) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxWidth().pullRefresh(pullRefreshState),
+            ) {
+                if (state.lines.isEmpty() && !state.loadingHistory) {
                     Text(
                         stringResource(
                             R.string.conversation_empty,
                             profile.ifBlank { stringResource(R.string.conversation_your_agent) },
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center),
                     )
-                }
-            } else {
+                } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                        modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -855,6 +919,14 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
                         )
                     }
                 }
+                }
+                PullRefreshIndicator(
+                    refreshing = state.loadingHistory,
+                    state = pullRefreshState,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    backgroundColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                )
             }
 
             if (state.sending && state.lines.none { it.streaming }) {
@@ -1161,7 +1233,7 @@ private fun ToolStepRow(tool: ChatToolStep, nowMillis: Long) {
 @Composable
 private fun timelineNow(line: ChatLine): Long {
     var now by remember(line.startedAtMillis, line.finishedAtMillis) {
-        mutableStateOf(line.finishedAtMillis ?: System.currentTimeMillis())
+        mutableLongStateOf(line.finishedAtMillis ?: System.currentTimeMillis())
     }
     LaunchedEffect(line.streaming, line.finishedAtMillis) {
         if (!line.streaming) {
@@ -1265,23 +1337,34 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
                 onBack = { viewModel.back() },
                 actions = {
                     IconButton(onClick = { creating = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.profiles_new))
+                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.profiles_new), tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = { viewModel.refreshProfiles() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh))
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh), tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = { confirmSignOut = true }) {
-                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = stringResource(R.string.action_sign_out))
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = stringResource(R.string.action_sign_out), tint = MaterialTheme.colorScheme.primary)
                     }
                 },
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (state.busy) LoadingRow()
-            state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
-            LazyColumn {
-                items(state.profiles) { profile ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(
+                start = StudioHorizontalPadding,
+                end = StudioHorizontalPadding,
+                top = 12.dp,
+                bottom = 28.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (state.busy) item { LoadingRow() }
+            state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
+            if (state.profiles.isNotEmpty()) {
+                item {
+                    StudioGroupedCard {
+                        state.profiles.forEachIndexed { index, profile ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1289,28 +1372,45 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
                                 onClick = { viewModel.selectProfile(profile.name) },
                                 onLongClick = { manage = profile },
                             )
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                            .padding(horizontal = 15.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ProfileAvatar(profile.name, profile.avatar, size = 42.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(profile.name, style = MaterialTheme.typography.bodyLarge)
+                        ProfileAvatar(profile.name, profile.avatar, size = 52.dp)
+                        Spacer(Modifier.width(13.dp))
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(profile.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             Text(
                                 profile.model ?: stringResource(R.string.profiles_no_model),
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         if (profile.name == state.activeProfile) {
-                            Text(
-                                stringResource(R.string.profiles_active),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(50.dp),
+                            ) {
+                                Text(
+                                    stringResource(R.string.profiles_active),
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        } else {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                            if (index != state.profiles.lastIndex) StudioCardDivider(startIndent = 80)
+                        }
+                    }
                 }
             }
         }
@@ -1931,107 +2031,139 @@ private fun LanguageAction(state: UiState, viewModel: AppViewModel) {
 @Composable
 private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
     val channels = state.serverConfig?.channels.orEmpty()
+    val profile = state.profiles.firstOrNull { it.name == state.activeProfile }
+        ?: state.profiles.firstOrNull { it.active }
+        ?: state.profiles.firstOrNull()
+    val profileName = profile?.name ?: state.activeProfile.ifBlank { "default" }
 
     Scaffold(
         topBar = {
-            StudioTopBar(
+            StudioLargeTopBar(
                 title = stringResource(R.string.agent_hub_title),
-                subtitle = state.activeProfile.takeIf { it.isNotBlank() }?.let {
-                    stringResource(R.string.agent_hub_profile, it)
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.show(Screen.Profiles) }) {
+                        ProfileAvatar(profileName, profile?.avatar, size = 34.dp)
+                    }
                 },
-                leading = { AppMark(size = 30.dp, corner = 9.dp) },
                 actions = {
                     IconButton(onClick = { viewModel.openSettings() }) {
-                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings))
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = stringResource(R.string.action_settings),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 },
             )
         },
         bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(
+                start = StudioHorizontalPadding,
+                end = StudioHorizontalPadding,
+                top = 8.dp,
+                bottom = 28.dp,
+            ),
         ) {
-            state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
-            state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
+            state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
+            state.notice?.let { message -> item { NoticeNote(message) { viewModel.dismissNotice() } } }
 
-            SettingsSection(stringResource(R.string.agent_hub_tools))
-            SettingsRow(
-                icon = Icons.Filled.Schedule,
-                label = stringResource(R.string.cron_title),
-                value = stringResource(R.string.settings_group_cron_note),
-                onClick = { viewModel.openCronJobs() },
-            )
-            SettingsRow(
-                icon = Icons.Filled.ViewKanban,
-                label = stringResource(R.string.agent_hub_kanban),
-                value = stringResource(R.string.agent_hub_kanban_note),
-                onClick = { viewModel.openKanban() },
-            )
-            SettingsRow(
-                icon = Icons.Filled.Forum,
-                label = stringResource(R.string.settings_channels),
-                value = if (channels.isEmpty()) {
-                    stringResource(R.string.settings_group_channels_note)
-                } else {
-                    stringResource(
-                        R.string.settings_channels_summary,
-                        channels.count { it.configured },
-                        channels.size.coerceAtLeast(CHANNELS.size),
+            item {
+                StudioGroupedCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.show(Screen.Profiles) }
+                            .padding(horizontal = 16.dp, vertical = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ProfileAvatar(profileName, profile?.avatar, size = 58.dp)
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(profileName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(
+                                profile?.model.orEmpty().ifBlank { stringResource(R.string.settings_default_model_server) },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Surface(
+                            color = Color(0xFF43C879).copy(alpha = 0.16f),
+                            shape = RoundedCornerShape(50.dp),
+                        ) {
+                            Text(
+                                if (profile?.active == true) stringResource(R.string.agent_status_active)
+                                else stringResource(R.string.agent_status_ready),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF43C879),
+                            )
+                        }
+                    }
+                }
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.agent_hub_work)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Schedule,
+                        color = Color(0xFF4D8DFF),
+                        title = stringResource(R.string.cron_title),
+                        subtitle = stringResource(R.string.settings_group_cron_note),
+                        onClick = { viewModel.openCronJobs() },
                     )
-                },
-                onClick = { viewModel.openChannels() },
-            )
-            SettingsRow(
-                icon = Icons.Filled.School,
-                label = stringResource(R.string.agent_hub_skills),
-                value = stringResource(R.string.agent_hub_skills_note),
-                onClick = { viewModel.openSkills() },
-            )
-            SettingsRow(
-                icon = Icons.Filled.Extension,
-                label = stringResource(R.string.agent_hub_plugins),
-                value = stringResource(R.string.agent_hub_plugins_note),
-                onClick = { viewModel.openPlugins() },
-            )
-            SettingsRow(
-                icon = Icons.Filled.Cable,
-                label = stringResource(R.string.agent_hub_mcp),
-                value = stringResource(R.string.agent_hub_mcp_note),
-                onClick = { viewModel.openMcp() },
-            )
-            SettingsRow(
-                icon = Icons.Filled.Pets,
-                label = stringResource(R.string.agent_hub_pets),
-                value = stringResource(R.string.agent_hub_pets_note),
-                onClick = { viewModel.openPets() },
-            )
-            SettingsRow(
-                icon = Icons.Filled.Memory,
-                label = stringResource(R.string.settings_group_memory),
-                value = stringResource(R.string.settings_group_memory_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Memory) },
-            )
-            SettingsRow(
-                icon = Icons.Filled.ModelTraining,
-                label = stringResource(R.string.settings_group_models),
-                value = stringResource(R.string.settings_group_models_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Models) },
-            )
+                    StudioCardDivider()
+                    StudioDestinationRow(
+                        icon = Icons.Filled.ViewKanban,
+                        color = Color(0xFFFF9F43),
+                        title = stringResource(R.string.agent_hub_kanban),
+                        subtitle = stringResource(R.string.agent_hub_kanban_note),
+                        onClick = { viewModel.openKanban() },
+                    )
+                    StudioCardDivider()
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Forum,
+                        color = Color(0xFF45C878),
+                        title = stringResource(R.string.settings_channels),
+                        subtitle = if (channels.isEmpty()) {
+                            stringResource(R.string.settings_group_channels_note)
+                        } else {
+                            stringResource(
+                                R.string.settings_channels_summary,
+                                channels.count { it.configured },
+                                channels.size.coerceAtLeast(CHANNELS.size),
+                            )
+                        },
+                        onClick = { viewModel.openChannels() },
+                    )
+                }
+            }
 
-            SettingsSection(stringResource(R.string.agent_hub_configuration))
-            SettingsRow(
-                icon = Icons.Filled.Person,
-                label = stringResource(R.string.settings_group_profile),
-                value = state.activeProfile.ifBlank { stringResource(R.string.settings_group_profile_note) },
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Profile) },
-            )
-            SettingsRow(
-                icon = Icons.Filled.Tune,
-                label = stringResource(R.string.settings_group_agent),
-                value = stringResource(R.string.settings_group_agent_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Agent) },
-            )
+            item { StudioSectionTitle(stringResource(R.string.agent_hub_capabilities)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(Icons.Filled.School, Color(0xFF7A5CFF), stringResource(R.string.agent_hub_skills), stringResource(R.string.agent_hub_skills_note), { viewModel.openSkills() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Extension, Color(0xFFB45CFF), stringResource(R.string.agent_hub_plugins), stringResource(R.string.agent_hub_plugins_note), { viewModel.openPlugins() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Cable, Color(0xFF35B7DB), stringResource(R.string.agent_hub_mcp), stringResource(R.string.agent_hub_mcp_note), { viewModel.openMcp() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Pets, Color(0xFFFF6584), stringResource(R.string.agent_hub_pets), stringResource(R.string.agent_hub_pets_note), { viewModel.openPets() })
+                }
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.agent_hub_intelligence)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(Icons.Filled.Memory, Color(0xFFFFB547), stringResource(R.string.settings_group_memory), stringResource(R.string.settings_group_memory_note), { viewModel.openSettingsGroup(SettingsGroup.Memory) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.ModelTraining, Color(0xFF39C6A3), stringResource(R.string.settings_group_models), stringResource(R.string.settings_group_models_note), { viewModel.openSettingsGroup(SettingsGroup.Models) })
+                }
+            }
         }
     }
 }
@@ -2040,41 +2172,105 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
+    val accountName = state.account.orEmpty().ifBlank { stringResource(R.string.settings_account_unknown) }
+
     Scaffold(
         topBar = {
-            StudioTopBar(
+            StudioLargeTopBar(
                 title = stringResource(R.string.settings_title),
-                subtitle = state.account?.let { stringResource(R.string.profiles_signed_in, it) },
-                onBack = { viewModel.back() },
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.back() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back),
+                        )
+                    }
+                },
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(
+                start = StudioHorizontalPadding,
+                end = StudioHorizontalPadding,
+                top = 8.dp,
+                bottom = 28.dp,
+            ),
         ) {
-            state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
-            state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
+            state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
+            state.notice?.let { message -> item { NoticeNote(message) { viewModel.dismissNotice() } } }
 
-            SettingsRow(
-                icon = Icons.Filled.Tune,
-                label = stringResource(R.string.more_settings_title),
-                value = stringResource(R.string.more_settings_note),
-                onClick = { viewModel.openMoreSettings() },
-            )
+            item { StudioSectionTitle(stringResource(R.string.settings_section_account)) }
+            item {
+                StudioGroupedCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.openSettingsGroup(SettingsGroup.Server) }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ProfileAvatar(accountName, state.accountAvatar, size = 50.dp)
+                        Spacer(Modifier.width(13.dp))
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(accountName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                state.currentUser?.role?.let {
+                                    stringResource(if (it == "super_admin") R.string.users_super_admin else R.string.users_admin)
+                                }.orEmpty(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
 
-            SettingsSection(stringResource(R.string.settings_category_app))
-            SettingsRow(
-                icon = Icons.Filled.PhoneAndroid,
-                label = stringResource(R.string.settings_group_device),
-                value = stringResource(R.string.settings_group_device_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Device) },
-            )
-            SettingsRow(
-                icon = Icons.Filled.Info,
-                label = stringResource(R.string.settings_section_about),
-                value = stringResource(R.string.settings_group_about_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.About) },
-            )
+            item { StudioSectionTitle(stringResource(R.string.settings_section_studio)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Person,
+                        color = Color(0xFF4D8DFF),
+                        title = stringResource(R.string.action_profiles),
+                        subtitle = state.activeProfile,
+                        onClick = { viewModel.show(Screen.Profiles) },
+                    )
+                    StudioCardDivider()
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Tune,
+                        color = Color(0xFF7A5CFF),
+                        title = stringResource(R.string.more_settings_title),
+                        subtitle = stringResource(R.string.more_settings_note),
+                        onClick = { viewModel.openMoreSettings() },
+                    )
+                }
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.settings_category_app)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(
+                        icon = Icons.Filled.PhoneAndroid,
+                        color = Color(0xFF39C6A3),
+                        title = stringResource(R.string.settings_group_device),
+                        subtitle = stringResource(R.string.settings_group_device_note),
+                        onClick = { viewModel.openSettingsGroup(SettingsGroup.Device) },
+                    )
+                    StudioCardDivider()
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Info,
+                        color = Color(0xFF8E8E93),
+                        title = stringResource(R.string.settings_section_about),
+                        subtitle = stringResource(R.string.settings_group_about_note),
+                        onClick = { viewModel.openSettingsGroup(SettingsGroup.About) },
+                    )
+                }
+            }
         }
     }
 }
@@ -2092,59 +2288,59 @@ private fun MoreSettingsScreen(state: UiState, viewModel: AppViewModel) {
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(
+                start = StudioHorizontalPadding,
+                end = StudioHorizontalPadding,
+                top = 8.dp,
+                bottom = 28.dp,
+            ),
         ) {
-            state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
-            state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
+            state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
+            state.notice?.let { message -> item { NoticeNote(message) { viewModel.dismissNotice() } } }
 
-            SettingsSection(stringResource(R.string.settings_category_account))
-            SettingsRow(
-                icon = Icons.Filled.Dns,
-                label = stringResource(R.string.settings_group_server),
-                value = state.baseUrl.ifBlank { stringResource(R.string.settings_group_server_note) },
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Server) },
-            )
-            if (state.currentUser?.role == "super_admin") {
-                SettingsRow(
-                    icon = Icons.Filled.Group,
-                    label = stringResource(R.string.settings_group_users),
-                    value = stringResource(R.string.settings_group_users_note),
-                    onClick = { viewModel.openSettingsGroup(SettingsGroup.Users) },
-                )
+            item { StudioSectionTitle(stringResource(R.string.settings_category_account)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Dns,
+                        color = Color(0xFF4D8DFF),
+                        title = stringResource(R.string.settings_group_server),
+                        subtitle = state.baseUrl.ifBlank { stringResource(R.string.settings_group_server_note) },
+                        onClick = { viewModel.openSettingsGroup(SettingsGroup.Server) },
+                    )
+                    if (state.currentUser?.role == "super_admin") {
+                        StudioCardDivider()
+                        StudioDestinationRow(
+                            icon = Icons.Filled.Group,
+                            color = Color(0xFF35B7DB),
+                            title = stringResource(R.string.settings_group_users),
+                            subtitle = stringResource(R.string.settings_group_users_note),
+                            onClick = { viewModel.openSettingsGroup(SettingsGroup.Users) },
+                        )
+                    }
+                }
             }
 
-            SettingsSection(stringResource(R.string.more_settings_studio))
-            SettingsRow(
-                icon = Icons.Filled.Compress,
-                label = stringResource(R.string.settings_group_compression),
-                value = stringResource(R.string.settings_group_compression_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Compression) },
-            )
-            SettingsRow(
-                icon = Icons.Filled.History,
-                label = stringResource(R.string.settings_group_sessions),
-                value = stringResource(R.string.settings_group_sessions_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Sessions) },
-            )
-            SettingsRow(
-                icon = Icons.Filled.PrivacyTip,
-                label = stringResource(R.string.settings_group_privacy),
-                value = stringResource(R.string.settings_group_privacy_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Privacy) },
-            )
-            SettingsRow(
-                icon = Icons.Filled.VpnLock,
-                label = stringResource(R.string.settings_group_proxy),
-                value = stringResource(R.string.settings_group_proxy_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Proxy) },
-            )
-            SettingsRow(
-                icon = Icons.Filled.DisplaySettings,
-                label = stringResource(R.string.settings_group_display),
-                value = stringResource(R.string.settings_group_display_note),
-                onClick = { viewModel.openSettingsGroup(SettingsGroup.Display) },
-            )
+            item { StudioSectionTitle(stringResource(R.string.more_settings_studio)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(Icons.Filled.Person, Color(0xFF7A5CFF), stringResource(R.string.settings_group_profile), state.activeProfile, { viewModel.openSettingsGroup(SettingsGroup.Profile) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Tune, Color(0xFFFF9F43), stringResource(R.string.settings_group_agent), stringResource(R.string.settings_group_agent_note), { viewModel.openSettingsGroup(SettingsGroup.Agent) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Compress, Color(0xFFB45CFF), stringResource(R.string.settings_group_compression), stringResource(R.string.settings_group_compression_note), { viewModel.openSettingsGroup(SettingsGroup.Compression) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.History, Color(0xFF39C6A3), stringResource(R.string.settings_group_sessions), stringResource(R.string.settings_group_sessions_note), { viewModel.openSettingsGroup(SettingsGroup.Sessions) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.PrivacyTip, Color(0xFF45C878), stringResource(R.string.settings_group_privacy), stringResource(R.string.settings_group_privacy_note), { viewModel.openSettingsGroup(SettingsGroup.Privacy) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.VpnLock, Color(0xFF4D8DFF), stringResource(R.string.settings_group_proxy), stringResource(R.string.settings_group_proxy_note), { viewModel.openSettingsGroup(SettingsGroup.Proxy) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.DisplaySettings, Color(0xFFFF6584), stringResource(R.string.settings_group_display), stringResource(R.string.settings_group_display_note), { viewModel.openSettingsGroup(SettingsGroup.Display) })
+                }
+            }
         }
     }
 }
@@ -2780,10 +2976,11 @@ private fun ChannelScreen(state: UiState, viewModel: AppViewModel) {
 @Composable
 internal fun SettingsSection(label: String) {
     Text(
-        label.uppercase(),
-        style = MaterialTheme.typography.labelSmall,
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 6.dp),
+        modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 4.dp),
     )
 }
 
@@ -2833,8 +3030,11 @@ private fun SettingsRowContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = StudioHorizontalPadding, vertical = 4.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -2858,7 +3058,6 @@ private fun SettingsRowContent(
             )
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
 }
 
 /** Settings row that previews the current app mark instead of an icon. */
@@ -2867,8 +3066,11 @@ private fun LogoRow(value: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = StudioHorizontalPadding, vertical = 4.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -2953,24 +3155,38 @@ internal fun StudioTopBar(
 
 @Composable
 private fun StudioTabs(state: UiState, viewModel: AppViewModel) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+    val colors = NavigationBarItemDefaults.colors(
+        selectedIconColor = MaterialTheme.colorScheme.primary,
+        selectedTextColor = MaterialTheme.colorScheme.primary,
+        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 0.dp,
+    ) {
         NavigationBarItem(
             selected = state.tab == Tab.Chats,
             onClick = { viewModel.showTab(Tab.Chats) },
             icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null) },
             label = { Text(stringResource(R.string.chats_tab)) },
+            colors = colors,
         )
         NavigationBarItem(
             selected = state.tab == Tab.Groups,
             onClick = { viewModel.showTab(Tab.Groups) },
             icon = { Icon(Icons.Filled.Group, contentDescription = null) },
             label = { Text(stringResource(R.string.groups_tab)) },
+            colors = colors,
         )
         NavigationBarItem(
             selected = state.tab == Tab.Agent,
             onClick = { viewModel.showTab(Tab.Agent) },
-            icon = { Icon(Icons.Filled.Psychology, contentDescription = null) },
+            icon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
             label = { Text(stringResource(R.string.agent_hub_tab)) },
+            colors = colors,
         )
     }
 }

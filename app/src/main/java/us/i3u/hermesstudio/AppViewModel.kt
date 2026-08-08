@@ -435,6 +435,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Reloads the open conversation without dropping the composer or flashing an empty screen. */
+    fun refreshConversation() {
+        val session = _state.value.openSession ?: return
+        historyJob?.cancel()
+        _state.update { it.copy(loadingHistory = true, error = null) }
+        historyJob = viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.messages(session.id) } }
+                .onSuccess { history ->
+                    _state.update { state ->
+                        if (state.screen != Screen.Conversation || state.openSession?.id != session.id) {
+                            return@update state
+                        }
+                        state.copy(
+                            loadingHistory = false,
+                            lines = history.map { message ->
+                                ChatLine(
+                                    text = message.content,
+                                    fromUser = message.fromUser,
+                                    timestamp = message.timestamp,
+                                )
+                            },
+                        )
+                    }
+                }
+                .onFailure { failure ->
+                    if (failure is kotlinx.coroutines.CancellationException) return@onFailure
+                    _state.update {
+                        if (it.screen == Screen.Conversation && it.openSession?.id == session.id) {
+                            it.copy(loadingHistory = false, error = failure.readableMessage(localized))
+                        } else {
+                            it
+                        }
+                    }
+                }
+        }
+    }
+
     fun startNewConversation() {
         cancelActiveRun(abort = true)
         historyJob?.cancel()

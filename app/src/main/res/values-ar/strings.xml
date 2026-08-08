@@ -69,6 +69,11 @@
     <string name="agent_hub_profile">البروفايل النشط: %1$s</string>
     <string name="agent_hub_tools">أدوات الوكيل</string>
     <string name="agent_hub_configuration">إعداد الوكيل</string>
+    <string name="agent_hub_work">العمل</string>
+    <string name="agent_hub_capabilities">القدرات</string>
+    <string name="agent_hub_intelligence">الذكاء</string>
+    <string name="agent_status_active">نشط</string>
+    <string name="agent_status_ready">جاهز</string>
     <string name="agent_hub_kanban">كانبان</string>
     <string name="agent_hub_skills">المهارات</string>
     <string name="agent_hub_plugins">الإضافات</string>
@@ -139,6 +144,7 @@
     <string name="settings_section_device">هذا الجهاز</string>
     <string name="settings_section_account">الحساب</string>
     <string name="settings_section_about">عن التطبيق</string>
+    <string name="settings_section_studio">الاستديو</string>
     <string name="settings_address">العنوان</string>
     <string name="settings_address_missing">غير محدد</string>
     <string name="settings_account">الحساب</string>

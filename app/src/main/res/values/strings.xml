@@ -53,10 +53,10 @@
     <string name="chats_tab">Chats</string>
     <string name="chats_all_profiles">All profiles</string>
     <string name="chats_empty">No conversations yet</string>
-    <string name="chats_section">CONVERSATIONS</string>
+    <string name="chats_section">conversations</string>
 
     <!-- Group chat -->
-    <string name="groups_title">Group chat</string>
+    <string name="groups_title">Groups</string>
     <string name="groups_tab">Groups</string>
     <string name="groups_empty">No rooms yet</string>
     <string name="groups_section">ROOMS</string>
@@ -70,6 +70,11 @@
     <string name="agent_hub_profile">Active profile: %1$s</string>
     <string name="agent_hub_tools">Agent tools</string>
     <string name="agent_hub_configuration">Agent configuration</string>
+    <string name="agent_hub_work">Work</string>
+    <string name="agent_hub_capabilities">Capabilities</string>
+    <string name="agent_hub_intelligence">Intelligence</string>
+    <string name="agent_status_active">Active</string>
+    <string name="agent_status_ready">Ready</string>
     <string name="agent_hub_kanban">Kanban</string>
     <string name="agent_hub_skills">Skills</string>
     <string name="agent_hub_plugins">Plugins</string>
@@ -140,6 +145,7 @@
     <string name="settings_section_device">This device</string>
     <string name="settings_section_account">Account</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_section_studio">Studio</string>
     <string name="settings_address">Address</string>
     <string name="settings_address_missing">not set</string>
     <string name="settings_account">Account</string>

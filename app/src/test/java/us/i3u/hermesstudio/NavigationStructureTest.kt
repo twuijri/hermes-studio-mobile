@@ -20,7 +20,7 @@ class NavigationStructureTest {
     }
 
     @Test
-    fun agentHubOwnsAgentToolsAndConfiguration() {
+    fun agentHubOwnsAgentToolsAndIntelligence() {
         val hub = activity.substringAfter("private fun AgentHubScreen")
             .substringBefore("/** App settings stay intentionally small")
 
@@ -29,14 +29,15 @@ class NavigationStructureTest {
             "openChannels()",
             "SettingsGroup.Memory",
             "SettingsGroup.Models",
-            "SettingsGroup.Profile",
-            "SettingsGroup.Agent",
             "openKanban()",
             "openSkills()",
             "openPlugins()",
             "openMcp()",
             "openPets()",
         ).forEach { destination -> assertTrue("Agent hub lost $destination", hub.contains(destination)) }
+        listOf("SettingsGroup.Profile", "SettingsGroup.Agent").forEach { setting ->
+            assertFalse("Agent hub should not duplicate $setting", hub.contains(setting))
+        }
         assertFalse("Agent tools must never open the website", hub.contains("ACTION_VIEW"))
         assertFalse("Agent tools must never open the website", hub.contains("openStudioTool"))
     }
@@ -53,19 +54,21 @@ class NavigationStructureTest {
     }
 
     @Test
-    fun moreSettingsContainsOnlyTheRemainingStudioGroups() {
+    fun moreSettingsOwnsTheRemainingStudioConfiguration() {
         val more = activity.substringAfter("private fun MoreSettingsScreen")
             .substringBefore("private fun SettingsGroupScreen")
         listOf(
             "SettingsGroup.Server",
             "SettingsGroup.Users",
+            "SettingsGroup.Profile",
+            "SettingsGroup.Agent",
             "SettingsGroup.Compression",
             "SettingsGroup.Sessions",
             "SettingsGroup.Privacy",
             "SettingsGroup.Proxy",
             "SettingsGroup.Display",
         ).forEach { group -> assertTrue("More settings lost $group", more.contains(group)) }
-        listOf("SettingsGroup.Agent", "SettingsGroup.Memory", "SettingsGroup.Models", "SettingsGroup.Profile")
+        listOf("SettingsGroup.Memory", "SettingsGroup.Models")
             .forEach { duplicate -> assertFalse("More settings duplicates $duplicate", more.contains(duplicate)) }
     }
 

@@ -3,6 +3,7 @@ import org.gradle.api.tasks.PathSensitivity
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 // A stable signing key means every build can install over the previous one.
@@ -15,14 +16,14 @@ val hasSigningKey = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
 
 android {
     namespace = "us.i3u.hermesstudio"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "us.i3u.hermesstudio"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 24
-        versionName = "0.13.5"
+        targetSdk = 35
+        versionCode = 25
+        versionName = "0.14.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -66,12 +67,16 @@ android {
         buildConfig = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
-
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+
+    // The app changes language at runtime; every App Bundle must carry both
+    // translations instead of letting Play split one of them away.
+    bundle {
+        language {
+            enableSplit = false
+        }
     }
 }
 
@@ -88,13 +93,13 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
-    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Talks to the server's /chat-run and /group-chat namespaces, so replies
     // stream in as they are written instead of arriving all at once.

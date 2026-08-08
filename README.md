@@ -182,7 +182,7 @@ written to the app cache, uploaded, and deleted immediately.
 gradle assembleDebug
 ```
 
-Requires JDK 17 and the Android SDK (compileSdk 34). CI builds the same target on every
+Requires JDK 17 and the Android SDK (compileSdk 35). CI builds the same target on every
 push, so a local SDK is optional.
 
 ### Running it without a Studio server
