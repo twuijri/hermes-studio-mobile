@@ -37,4 +37,19 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(APIClient.sessionsPath(profile: ""), "/api/hermes/sessions?limit=80")
         XCTAssertEqual(APIClient.sessionsPath(profile: "manager"), "/api/hermes/sessions?profile=manager&limit=80")
     }
+
+    func testMarkdownPreservesArabicParagraphsAndLists() throws {
+        let source = "تم بدء العمل:\n\n1. **فحص الرسائل**\n   - عاجلة وتتطلب إجراء.\n   - طلبات معلومات.\n\n2. **تنظيف البريد**"
+        let rendered = try XCTUnwrap(MarkdownText.attributed(source))
+        let plain = String(rendered.characters)
+
+        XCTAssertTrue(plain.contains("\n\n1. فحص الرسائل\n"))
+        XCTAssertTrue(plain.contains("   - عاجلة وتتطلب إجراء."))
+        XCTAssertTrue(plain.contains("\n\n2. تنظيف البريد"))
+        XCTAssertEqual(MarkdownText.layoutDirection(for: source), .rightToLeft)
+    }
+
+    func testEnglishMarkdownKeepsLeftToRightDirection() {
+        XCTAssertEqual(MarkdownText.layoutDirection(for: "1. **First task**"), .leftToRight)
+    }
 }

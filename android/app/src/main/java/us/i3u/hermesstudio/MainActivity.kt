@@ -362,7 +362,7 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
             StudioLargeTopBar(
                 title = stringResource(R.string.chats_title),
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.show(Screen.Profiles) }) {
+                    IconButton(onClick = { viewModel.openProfiles() }) {
                         ProfileAvatar(
                             name = state.activeProfile.ifBlank { "default" },
                             spec = state.avatarOf(state.activeProfile),
@@ -2041,7 +2041,7 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
             StudioLargeTopBar(
                 title = stringResource(R.string.agent_hub_title),
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.show(Screen.Profiles) }) {
+                    IconButton(onClick = { viewModel.openProfiles() }) {
                         ProfileAvatar(profileName, profile?.avatar, size = 34.dp)
                     }
                 },
@@ -2073,7 +2073,7 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
             item {
                 StudioGroupedCard {
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { viewModel.show(Screen.Profiles) }
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.openProfiles() }
                             .padding(horizontal = 16.dp, vertical = 15.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -2238,7 +2238,7 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
                         color = Color(0xFF4D8DFF),
                         title = stringResource(R.string.action_profiles),
                         subtitle = state.activeProfile,
-                        onClick = { viewModel.show(Screen.Profiles) },
+                        onClick = { viewModel.openProfiles() },
                     )
                     StudioCardDivider()
                     StudioDestinationRow(
@@ -2476,7 +2476,7 @@ private fun ProfileSettings(state: UiState, viewModel: AppViewModel) {
         icon = Icons.Filled.Person,
         label = stringResource(R.string.settings_profile),
         value = profile,
-        onClick = { viewModel.show(Screen.Profiles) },
+        onClick = { viewModel.openProfiles() },
     )
     SettingsRow(
         icon = Icons.Filled.ModelTraining,

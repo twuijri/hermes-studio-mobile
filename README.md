@@ -14,6 +14,11 @@ Current mobile release: **1.2.0**
 
 Both apps connect directly to the same Hermes Studio REST and Socket.IO APIs. They share the same product structure—Chats, Groups, Agent tools, native Kanban, jobs, channels, skills, plugins, MCP, profiles, and Studio settings—while following the interaction and navigation conventions of each platform.
 
+Native notifications that arrive while an app is closed require a small server
+addition on top of Studio's existing completion events. The capability-gated,
+privacy-safe contract and its APNs/FCM prerequisites are documented in
+[`docs/push-notifications.md`](docs/push-notifications.md).
+
 ## Install
 
 - **Android:** download [`hermes-studio-android.apk`](https://github.com/twuijri/hermes-studio-mobile/releases/tag/latest-debug) from the rolling release.

@@ -79,4 +79,12 @@ class NavigationStructureTest {
         assertTrue(kanban.contains("graphicsLayer { translationX = dragX }"))
         assertTrue(kanban.contains("DropdownMenuItem"))
     }
+
+    @Test
+    fun profilesReturnsToTheScreenThatOpenedIt() {
+        assertTrue(viewModel.contains("val profilesReturnScreen: Screen"))
+        assertTrue(viewModel.contains("Screen.Profiles -> state.profilesReturnScreen"))
+        assertTrue(viewModel.contains("fun openProfiles()"))
+        assertFalse("callers must not bypass origin tracking", activity.contains("show(Screen.Profiles)"))
+    }
 }

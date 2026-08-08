@@ -117,6 +117,8 @@ data class UiState(
     val openGroup: SettingsGroup? = null,
     /** Parent hub for a settings group, channel list, or scheduled-jobs list. */
     val toolReturnScreen: Screen = Screen.Settings,
+    /** Exact screen that opened Profiles; it is shared by several root surfaces. */
+    val profilesReturnScreen: Screen = Screen.Chats,
     val agentSettings: AgentSettings? = null,
     val autoStart: AutoStartPolicy? = null,
     val loadingAgentSettings: Boolean = false,
@@ -2243,6 +2245,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refreshServerConfig()
     }
 
+    fun openProfiles() {
+        _state.update { state ->
+            val parent = when (state.screen) {
+                Screen.Chats, Screen.Groups, Screen.AgentHub,
+                Screen.Settings, Screen.SettingsGroup, Screen.MoreSettings,
+                -> state.screen
+                else -> when (state.tab) {
+                    Tab.Groups -> Screen.Groups
+                    Tab.Agent -> Screen.AgentHub
+                    Tab.Chats -> Screen.Chats
+                }
+            }
+            state.copy(
+                screen = Screen.Profiles,
+                profilesReturnScreen = parent,
+                error = null,
+                notice = null,
+            )
+        }
+    }
+
     fun openMoreSettings() {
         _state.update { it.copy(screen = Screen.MoreSettings, error = null, notice = null, openGroup = null) }
     }
@@ -2411,6 +2434,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Screen.Skill -> Screen.Skills
                 Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets -> Screen.AgentHub
                 Screen.Channels, Screen.SettingsGroup, Screen.CronJobs -> state.toolReturnScreen
+                Screen.Profiles -> state.profilesReturnScreen
                 Screen.MoreSettings -> Screen.Settings
                 else -> when (state.tab) {
                     Tab.Groups -> Screen.Groups

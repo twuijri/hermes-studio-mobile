@@ -174,7 +174,9 @@ written to the app cache, uploaded, and deleted immediately.
 - Answering an approval request the agent raises mid-run
 - Editing a profile's avatar from the app, not only reading it
 - Voice settings (STT and TTS providers) from the app
-- Push notifications for finished runs
+- Native push notifications for finished runs, approvals, and scheduled reports
+  after the Studio server implements the capability-gated APNs/FCM contract in
+  [`../docs/push-notifications.md`](../docs/push-notifications.md)
 
 ## Build locally
 
