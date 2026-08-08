@@ -66,6 +66,7 @@ struct AgentToolRow: View {
 struct MarkdownText: View {
     let text: String
     var body: some View {
+        let direction = Self.layoutDirection(for: text)
         Group {
             if let value = Self.attributed(text) {
                 Text(value)
@@ -73,8 +74,13 @@ struct MarkdownText: View {
                 Text(text)
             }
         }
-        .multilineTextAlignment(Self.layoutDirection(for: text) == .rightToLeft ? .trailing : .leading)
-        .environment(\.layoutDirection, Self.layoutDirection(for: text))
+        .multilineTextAlignment(direction == .rightToLeft ? .trailing : .leading)
+        // The inner direction makes punctuation and list markers follow the
+        // language. The full-width outer frame fixes the physical edge: Arabic
+        // always starts on the right even when the app UI itself is English.
+        .environment(\.layoutDirection, direction)
+        .frame(maxWidth: .infinity, alignment: direction == .rightToLeft ? .trailing : .leading)
+        .environment(\.layoutDirection, .leftToRight)
         .textSelection(.enabled)
     }
 

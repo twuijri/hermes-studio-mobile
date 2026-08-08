@@ -9,7 +9,7 @@ struct HermesStudioApp: App {
             ZStack(alignment: .top) {
                 Group {
                     switch store.phase {
-                    case .launching: LaunchView()
+                    case .launching: LaunchView(server: store.baseURL)
                     case .signedOut: LoginView()
                     case .signedIn: RootTabs()
                     }
@@ -33,8 +33,22 @@ struct HermesStudioApp: App {
 }
 
 private struct LaunchView: View {
+    let server: String
+
     var body: some View {
-        VStack(spacing: 20) { AppMark(size: 94); ProgressView().controlSize(.large); Text("Hermes Studio").font(.title2.weight(.bold)) }
+        VStack(spacing: 14) {
+            AppMark(size: 94)
+            Text("Hermes Studio").font(.title2.weight(.bold))
+            if !server.isEmpty {
+                Text(server)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            ProgressView().controlSize(.large).padding(.top, 5)
+        }
+            .padding(.horizontal, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity).background(HermesTheme.navy).foregroundStyle(.white)
     }
 }
