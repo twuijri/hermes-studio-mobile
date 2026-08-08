@@ -1,9 +1,19 @@
-name: build
+name: Android
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'android/**'
+      - 'VERSION'
+      - 'scripts/check-version.sh'
+      - '.github/workflows/android.yml'
   pull_request:
+    paths:
+      - 'android/**'
+      - 'VERSION'
+      - 'scripts/check-version.sh'
+      - '.github/workflows/android.yml'
   workflow_dispatch:
 
 permissions:
@@ -12,6 +22,9 @@ permissions:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
     env:
       KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
     steps:
@@ -27,6 +40,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+
+      - name: Verify shared version
+        run: |
+          ../scripts/check-version.sh
+          echo "MOBILE_VERSION=$(tr -d '[:space:]' < ../VERSION)" >> "$GITHUB_ENV"
 
       - name: Restore signing key
         if: env.KEYSTORE_B64 != ''
@@ -58,8 +76,8 @@ jobs:
 
       - name: Collect APK
         run: |
-          mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk out/hermes-studio-android.apk
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk ../out/hermes-studio-android.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -71,9 +89,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-debug
-          name: Latest build
+          name: Hermes Studio Mobile ${{ env.MOBILE_VERSION }} — Android
           body: |
-            APK built from `main` (${{ github.sha }}), signed with the project key
+            Android APK for Hermes Studio Mobile ${{ env.MOBILE_VERSION }}, built from `main`
+            (${{ github.sha }}) and signed with the project key
             so it installs over the previous version.
 
             Android will warn that Play Protect has not seen this developer —

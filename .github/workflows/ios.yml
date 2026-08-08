@@ -1,0 +1,40 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'VERSION'
+      - 'scripts/check-version.sh'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'VERSION'
+      - 'scripts/check-version.sh'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify shared version
+        run: scripts/check-version.sh
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild \
+            -project ios/HermesStudio.xcodeproj \
+            -scheme HermesStudio \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath "$RUNNER_TEMP/HermesStudioDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build

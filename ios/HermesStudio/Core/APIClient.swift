@@ -1,0 +1,339 @@
+import Foundation
+import UniformTypeIdentifiers
+
+enum HermesError: LocalizedError {
+    case invalidServer
+    case http(Int, String)
+    case malformedResponse
+    case server(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidServer: String(localized: "Enter a valid Studio address")
+        case let .http(code, detail): detail.isEmpty ? "HTTP \(code)" : "HTTP \(code): \(detail)"
+        case .malformedResponse: String(localized: "The Studio returned an unreadable response")
+        case let .server(message): message
+        }
+    }
+}
+
+final class APIClient: @unchecked Sendable {
+    private(set) var baseURL: String
+    private(set) var token: String
+    private let session: URLSession
+
+    init(baseURL: String = "", token: String = "") {
+        self.baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.token = token
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 300
+        configuration.waitsForConnectivity = true
+        self.session = URLSession(configuration: configuration)
+    }
+
+    func update(baseURL: String, token: String) {
+        self.baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.token = token
+    }
+
+    func url(_ path: String) throws -> URL {
+        guard let url = URL(string: baseURL + path) else { throw HermesError.invalidServer }
+        return url
+    }
+
+    func request(_ path: String, method: String = "GET", body: Any? = nil, profile: String? = nil) async throws -> Any {
+        var request = URLRequest(url: try url(path))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let profile, !profile.isEmpty { request.setValue(profile, forHTTPHeaderField: "X-Hermes-Profile") }
+        if let body {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw HermesError.malformedResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            let detail = Self.errorDetail(data)
+            throw HermesError.http(http.statusCode, detail)
+        }
+        guard !data.isEmpty else { return JSON() }
+        return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+    }
+
+    func object(_ path: String, method: String = "GET", body: Any? = nil, profile: String? = nil) async throws -> JSON {
+        let result = try await request(path, method: method, body: body, profile: profile)
+        if let object = result as? JSON { return object }
+        if let array = result as? [Any] { return ["data": array] }
+        throw HermesError.malformedResponse
+    }
+
+    func array(_ path: String, keys: [String], profile: String? = nil) async throws -> [JSON] {
+        let result = try await request(path, profile: profile)
+        if let list = result as? [Any] { return list.objects }
+        guard let json = result as? JSON else { return [] }
+        for key in keys where json[key] != nil { return json.objects(key) }
+        return json.objects("data")
+    }
+
+    func login(username: String, password: String) async throws -> String {
+        let json = try await object("/api/auth/login", method: "POST", body: ["username": username, "password": password])
+        guard let token = json.string("token").nilIfEmpty else { throw HermesError.server(String(localized: "Login succeeded but no token was returned")) }
+        return token
+    }
+
+    func currentUser() async throws -> CurrentUser {
+        let root = try await object("/api/auth/me")
+        let user = root.object("user").isEmpty ? root : root.object("user")
+        return CurrentUser(id: user.int("id"), username: user.string("username", "userId"), role: user.string("role").nilIfEmpty ?? "admin", status: user.string("status").nilIfEmpty ?? "active", avatar: AvatarSpec(user["avatar"]))
+    }
+
+    func profiles() async throws -> [Profile] {
+        try await array("/api/hermes/profiles", keys: ["profiles"]).map(Profile.init).filter { !$0.name.isEmpty }
+    }
+
+    static func sessionsPath(profile: String?, limit: Int = 80) -> String {
+        guard let profile = profile?.trimmingCharacters(in: .whitespacesAndNewlines), !profile.isEmpty else {
+            return "/api/hermes/sessions?limit=\(limit)"
+        }
+        return "/api/hermes/sessions?profile=\(profile.urlEncoded)&limit=\(limit)"
+    }
+
+    func sessions(profile: String? = nil) async throws -> [SessionSummary] {
+        let fallbackProfile = profile?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return try await array(Self.sessionsPath(profile: profile), keys: ["sessions", "conversations"])
+            .map { SessionSummary($0, profile: fallbackProfile) }
+            .filter { !$0.id.isEmpty }
+    }
+
+    func messages(sessionID: String) async throws -> [Message] {
+        let path = "/api/hermes/sessions/conversations/\(sessionID.urlEncoded)/messages?humanOnly=true"
+        return try await array(path, keys: ["messages"]).map(Message.init)
+    }
+
+    func renameSession(_ id: String, title: String) async throws { _ = try await object("/api/hermes/sessions/\(id.urlEncoded)/rename", method: "POST", body: ["title": title]) }
+    func deleteSession(_ id: String) async throws { _ = try await object("/api/hermes/sessions/\(id.urlEncoded)", method: "DELETE") }
+    func setSessionModel(_ id: String, model: String, provider: String?) async throws {
+        var body: JSON = ["model": model]; if let provider, !provider.isEmpty { body["provider"] = provider }
+        _ = try await object("/api/hermes/sessions/\(id.urlEncoded)/model", method: "POST", body: body)
+    }
+
+    func models(profile: String) async throws -> [ModelOption] {
+        let root = try await object("/api/hermes/available-models?profile=\(profile.urlEncoded)")
+        var values = root.objects("models")
+        if values.isEmpty, let strings = root["models"] as? [String] { values = strings.map { ["id": $0, "name": $0] } }
+        if values.isEmpty {
+            for group in root.objects("groups") + root.objects("allProviders") {
+                let provider = group.string("provider", "name", "label")
+                for raw in group.array("models") {
+                    if let id = raw as? String, id != "*" { values.append(["id": id, "name": id, "provider": provider]) }
+                    else if var model = raw as? JSON { model["provider"] = model.string("provider").nilIfEmpty ?? provider; values.append(model) }
+                }
+            }
+        }
+        return values.map(ModelOption.init).filter { !$0.id.isEmpty }
+    }
+
+    func setDefaultModel(profile: String, model: String, provider: String?) async throws {
+        var body: JSON = ["default": model]; if let provider, !provider.isEmpty { body["provider"] = provider }
+        _ = try await object("/api/hermes/config/model?profile=\(profile.urlEncoded)", method: "PUT", body: body, profile: profile)
+    }
+
+    func updateProviderKey(profile: String, provider: String, key: String) async throws {
+        _ = try await object("/api/hermes/config/providers/\(provider.urlEncoded)?profile=\(profile.urlEncoded)", method: "PUT", body: ["api_key": key], profile: profile)
+    }
+
+    func createProfile(_ name: String) async throws { _ = try await object("/api/hermes/profiles", method: "POST", body: ["name": name]) }
+    func renameProfile(_ name: String, to newName: String) async throws { _ = try await object("/api/hermes/profiles/\(name.urlEncoded)/rename", method: "POST", body: ["new_name": newName]) }
+    func deleteProfile(_ name: String) async throws { _ = try await object("/api/hermes/profiles/\(name.urlEncoded)", method: "DELETE") }
+    func restartGateway(profile: String) async throws { _ = try await object("/api/hermes/profiles/\(profile.urlEncoded)/gateway/restart", method: "POST") }
+
+    func rooms() async throws -> [Room] { try await array("/api/hermes/group-chat/rooms", keys: ["rooms"]).map(Room.init).filter { !$0.id.isEmpty } }
+    func room(_ id: String) async throws -> (Room, [RoomMessage]) {
+        let root = try await object("/api/hermes/group-chat/rooms/\(id.urlEncoded)?limit=80&offset=0")
+        let roomJSON = root.object("room").isEmpty ? root : root.object("room")
+        return (Room(roomJSON), root.objects("messages").map(RoomMessage.init))
+    }
+    func createRoom(name: String, inviteCode: String, agents: [String]) async throws -> Room {
+        let body: JSON = ["name": name, "inviteCode": inviteCode, "agents": agents.map { ["profile": $0] }]
+        let root = try await object("/api/hermes/group-chat/rooms", method: "POST", body: body)
+        return Room(root.object("room"))
+    }
+    func deleteRoom(_ id: String) async throws { _ = try await object("/api/hermes/group-chat/rooms/\(id.urlEncoded)", method: "DELETE") }
+    func addRoomAgent(_ id: String, profile: String) async throws { _ = try await object("/api/hermes/group-chat/rooms/\(id.urlEncoded)/agents", method: "POST", body: ["profile": profile]) }
+
+    func boards() async throws -> [KanbanBoard] {
+        var rows = try await array("/api/hermes/kanban/boards", keys: ["boards"])
+        if rows.isEmpty { rows = [["id": "default", "name": String(localized: "Default")]] }
+        return rows.map(KanbanBoard.init)
+    }
+    func kanbanTasks(board: String) async throws -> [KanbanTask] { try await array("/api/hermes/kanban?board=\(board.urlEncoded)", keys: ["tasks", "items"]).map(KanbanTask.init) }
+    func createTask(board: String, title: String, description: String, priority: String) async throws {
+        let numericPriority = priority == "high" ? 3 : (priority == "low" ? 1 : 2)
+        _ = try await object("/api/hermes/kanban?board=\(board.urlEncoded)", method: "POST", body: ["title": title, "body": description, "priority": numericPriority, "triage": true, "skills": []])
+    }
+    func moveTasks(board: String, ids: [String], status: String) async throws { _ = try await object("/api/hermes/kanban/tasks/bulk?board=\(board.urlEncoded)", method: "POST", body: ["ids": ids, "status": status]) }
+    func assignTask(board: String, id: String, profile: String?) async throws {
+        let body: JSON = ["profile": profile ?? ""]
+        _ = try await object("/api/hermes/kanban/\(id.urlEncoded)/assign?board=\(board.urlEncoded)", method: "POST", body: body)
+    }
+    func commentTask(board: String, id: String, comment: String) async throws { _ = try await object("/api/hermes/kanban/\(id.urlEncoded)/comments?board=\(board.urlEncoded)", method: "POST", body: ["body": comment]) }
+
+    func cronJobs(profile: String) async throws -> [CronJob] {
+        try await array("/api/hermes/jobs?include_disabled=true", keys: ["jobs"], profile: profile).map(CronJob.init)
+    }
+    func setCronEnabled(_ id: String, enabled: Bool, profile: String) async throws { _ = try await object("/api/hermes/jobs/\(id.urlEncoded)/\(enabled ? "resume" : "pause")", method: "POST", profile: profile) }
+    func runCron(_ id: String, profile: String) async throws { _ = try await object("/api/hermes/jobs/\(id.urlEncoded)/run", method: "POST", profile: profile) }
+    func deleteCron(_ id: String, profile: String) async throws { _ = try await object("/api/hermes/jobs/\(id.urlEncoded)", method: "DELETE", profile: profile) }
+    func saveCron(id: String?, name: String, schedule: String, prompt: String, profile: String, enabled: Bool) async throws {
+        let body: JSON = ["name": name, "schedule": schedule, "prompt": prompt, "profile": profile, "enabled": enabled, "timezone": TimeZone.current.identifier]
+        let path = id.map { "/api/hermes/jobs/\($0.urlEncoded)" } ?? "/api/hermes/jobs"
+        _ = try await object(path, method: id == nil ? "POST" : "PATCH", body: body, profile: profile)
+    }
+
+    func skills(profile: String) async throws -> [SkillItem] {
+        let root = try await object("/api/hermes/skills?profile=\(profile.urlEncoded)&target=all", profile: profile)
+        var result = root.objects("skills").map { SkillItem($0) }
+        if result.isEmpty {
+            for category in root.objects("categories") {
+                let categoryName = category.string("name", "category").nilIfEmpty ?? "workspace"
+                result += category.objects("skills").map { SkillItem($0, category: categoryName) }
+            }
+        }
+        if result.isEmpty {
+            for (category, raw) in root where raw is [Any] { result += (raw as? [Any] ?? []).objects.map { SkillItem($0, category: category) } }
+        }
+        return result
+    }
+    func skill(category: String, name: String, profile: String) async throws -> SkillItem {
+        let result = try await object("/api/hermes/skills/\(category.urlEncoded)/\(name.urlEncoded)", profile: profile)
+        return SkillItem(["name": name, "category": category, "content": result.string("content"), "enabled": true], category: category)
+    }
+    func saveSkill(_ skill: SkillItem, profile: String) async throws { _ = try await object("/api/hermes/skills/\(skill.category.urlEncoded)/\(skill.name.urlEncoded)", method: "PUT", body: ["content": skill.content], profile: profile) }
+    func toggleSkill(_ skill: SkillItem, profile: String) async throws { _ = try await object("/api/hermes/skills/toggle", method: "PUT", body: ["name": skill.name, "enabled": !skill.enabled], profile: profile) }
+    func pinSkill(_ skill: SkillItem, profile: String) async throws { _ = try await object("/api/hermes/skills/pin", method: "PUT", body: ["name": skill.name, "pinned": !skill.pinned], profile: profile) }
+    func deleteSkill(_ skill: SkillItem, profile: String) async throws { _ = try await object("/api/hermes/skills/\(skill.category.urlEncoded)/\(skill.name.urlEncoded)", method: "DELETE", profile: profile) }
+
+    func plugins() async throws -> [PluginItem] { try await array("/api/hermes/plugins", keys: ["plugins"]).map(PluginItem.init) }
+    func setPlugin(_ plugin: PluginItem, enabled: Bool) async throws { _ = try await object("/api/hermes/plugins/\(plugin.key.urlEncoded)/\(enabled ? "enable" : "disable")", method: "POST") }
+
+    func mcpServers() async throws -> [MCPServer] { try await array("/api/hermes/mcp/servers", keys: ["servers"]).map(MCPServer.init) }
+    func saveMCP(name: String, command: String, arguments: [String], url: String, enabled: Bool, existing: Bool) async throws {
+        var config: JSON = ["enabled": enabled]
+        if !url.isEmpty { config["transport"] = "http"; config["url"] = url }
+        else { config["transport"] = "stdio"; config["command"] = command; config["args"] = arguments }
+        let body: JSON = existing ? ["config": config] : ["name": name, "config": config]
+        _ = try await object(existing ? "/api/hermes/mcp/servers/\(name.urlEncoded)" : "/api/hermes/mcp/servers", method: existing ? "PATCH" : "POST", body: body)
+    }
+    func testMCP(_ name: String) async throws -> JSON { try await object("/api/hermes/mcp/servers/\(name.urlEncoded)/test", method: "POST") }
+    func reloadMCP(_ name: String) async throws { _ = try await object("/api/hermes/mcp/reload?server=\(name.urlEncoded)", method: "POST") }
+    func deleteMCP(_ name: String) async throws { _ = try await object("/api/hermes/mcp/servers/\(name.urlEncoded)", method: "DELETE") }
+
+    func petManifest() async throws -> [Pet] { try await array("/api/hermes/petdex/manifest", keys: ["pets", "manifest"]).map { Pet($0) } }
+    func activePets() async throws -> [Pet] {
+        let result = try await object("/api/hermes/pets/active")
+        let pet = result.object("pet")
+        return pet.isEmpty ? [] : [Pet(pet, active: pet.bool("enabled", default: true))]
+    }
+    func adoptPet(_ id: String, profile: String) async throws { _ = try await object("/api/hermes/pets/adopt", method: "POST", body: ["slug": id]) }
+    func setPet(_ id: String, profile: String, active: Bool) async throws { _ = try await object("/api/hermes/pets/active", method: "PATCH", body: ["enabled": active]) }
+
+    func config(profile: String, section: String? = nil) async throws -> JSON {
+        var path = "/api/hermes/config?profile=\(profile.urlEncoded)"
+        if let section { path += "&section=\(section.urlEncoded)" }
+        return try await object(path, profile: profile)
+    }
+    func updateConfig(profile: String, section: String, values: JSON, restart: Bool = false) async throws {
+        let body: JSON = ["section": section, "values": values, "restart": restart]
+        _ = try await object("/api/hermes/config?profile=\(profile.urlEncoded)", method: "PUT", body: body, profile: profile)
+    }
+    func updateCredentials(profile: String, platform: String, values: [String: String]) async throws {
+        var direct: JSON = [:], extra: JSON = [:]
+        for (key, value) in values { if key.hasPrefix("extra.") { extra[String(key.dropFirst(6))] = value } else { direct[key] = value } }
+        if !extra.isEmpty { direct["extra"] = extra }
+        _ = try await object("/api/hermes/config/credentials?profile=\(profile.urlEncoded)", method: "PUT", body: ["platform": platform, "values": direct], profile: profile)
+    }
+    func clearCredentials(profile: String, platform: String) async throws { _ = try await object("/api/hermes/config/credentials/\(platform.urlEncoded)?profile=\(profile.urlEncoded)", method: "DELETE", profile: profile) }
+
+    func changePassword(current: String, new: String) async throws { _ = try await object("/api/auth/change-password", method: "POST", body: ["currentPassword": current, "newPassword": new]) }
+    func changeUsername(currentPassword: String, newUsername: String) async throws { _ = try await object("/api/auth/change-username", method: "POST", body: ["currentPassword": currentPassword, "newUsername": newUsername]) }
+    func updateAvatar(dataURL: String) async throws {
+        let data = try JSONSerialization.data(withJSONObject: ["type": "image", "dataUrl": dataURL])
+        _ = try await object("/api/auth/avatar", method: "PUT", body: ["avatar": String(data: data, encoding: .utf8) ?? ""])
+    }
+    func resetAvatar() async throws { _ = try await object("/api/auth/avatar", method: "PUT", body: ["avatar": ["type": "default"]]) }
+
+    func upload(data: Data, name: String, mime: String, profile: String) async throws -> Upload {
+        let result = try await multipart("/upload?profile=\(profile.urlEncoded)", data: data, name: name, mime: mime, field: "file", profile: profile)
+        let item = result.object("file").isEmpty ? result : result.object("file")
+        return Upload(name: item.string("name", "filename").nilIfEmpty ?? name, path: item.string("path", "filePath", "url"), mime: item.string("mime", "media_type", "type").nilIfEmpty ?? mime)
+    }
+
+    func transcribe(data: Data, name: String, mime: String, profile: String) async throws -> String {
+        let result = try await multipart("/api/hermes/stt/transcribe?profile=\(profile.urlEncoded)", data: data, name: name, mime: mime, field: "file", profile: profile)
+        return result.string("text", "transcript")
+    }
+
+    func runChatREST(profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?) async throws -> (String, String) {
+        let content: Any
+        if attachments.isEmpty { content = input }
+        else {
+            var blocks: [JSON] = input.isEmpty ? [] : [["type": "text", "text": input]]
+            blocks += attachments.map { ["type": $0.mime.hasPrefix("image/") ? "image" : "file", "name": $0.name, "path": $0.path, "media_type": $0.mime] }
+            content = blocks
+        }
+        var body: JSON = ["input": content, "profile": profile, "session_id": sessionID]
+        if let reasoningEffort, !reasoningEffort.isEmpty { body["reasoning_effort"] = reasoningEffort }
+        if let model, !model.isEmpty { body["model"] = model }
+        if let provider, !provider.isEmpty { body["provider"] = provider }
+        let result = try await object("/api/chat-run/runs", method: "POST", body: body, profile: profile)
+        return (result.string("output", "message", "text"), result.string("reasoning", "thinking"))
+    }
+
+    private func multipart(_ path: String, data: Data, name: String, mime: String, field: String, profile: String?) async throws -> JSON {
+        let boundary = "HermesBoundary\(UUID().uuidString)"
+        var body = Data()
+        body.append("--\(boundary)\r\n")
+        body.append("Content-Disposition: form-data; name=\"\(field)\"; filename=\"\(name.replacingOccurrences(of: "\"", with: ""))\"\r\n")
+        body.append("Content-Type: \(mime)\r\n\r\n")
+        body.append(data); body.append("\r\n--\(boundary)--\r\n")
+        var request = URLRequest(url: try url(path)); request.httpMethod = "POST"; request.httpBody = body
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let profile { request.setValue(profile, forHTTPHeaderField: "X-Hermes-Profile") }
+        let (responseData, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw HermesError.http(code, Self.errorDetail(responseData))
+        }
+        guard let json = try JSONSerialization.jsonObject(with: responseData) as? JSON else { throw HermesError.malformedResponse }
+        return json
+    }
+
+    func downloadURL(path: String, name: String, profile: String) -> URL? {
+        var components = URLComponents(string: baseURL + "/api/hermes/download")
+        components?.queryItems = [URLQueryItem(name: "path", value: path), URLQueryItem(name: "name", value: name), URLQueryItem(name: "profile", value: profile), URLQueryItem(name: "token", value: token)]
+        return components?.url
+    }
+
+    func logoData() async -> Data? {
+        guard let url = try? url("/logo.png") else { return nil }
+        var request = URLRequest(url: url); if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        return try? await session.data(for: request).0
+    }
+
+    private static func errorDetail(_ data: Data) -> String {
+        if let json = try? JSONSerialization.jsonObject(with: data) as? JSON { return json.string("error", "message", "detail") }
+        return String(data: data, encoding: .utf8)?.prefix(300).description ?? ""
+    }
+}
+
+private extension Data {
+    mutating func append(_ string: String) { if let data = string.data(using: .utf8) { append(data) } }
+}
+
+extension String {
+    var urlEncoded: String { addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+=?#/"))) ?? self }
+}

@@ -1,7 +1,17 @@
-.gradle/
-build/
-local.properties
-*.iml
-.idea/
 .DS_Store
+.idea/
+*.iml
+.gradle/
+.kotlin/
 out/
+
+# Platform build output and local configuration
+android/local.properties
+android/**/build/
+ios/build/
+ios/DerivedData/
+ios/.derived-*/
+ios/.device-install/
+ios/.device-install-target/
+ios/**/*.xcuserstate
+ios/**/xcuserdata/
