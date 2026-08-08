@@ -35,16 +35,32 @@ final class AppStore: ObservableObject {
         guard isConfigured else { phase = .signedOut; return }
         api.update(baseURL: baseURL, token: token)
         do {
-            async let user = api.currentUser()
-            async let loadedProfiles = api.profiles()
-            currentUser = try await user
-            profiles = try await loadedProfiles
-            selectProfileIfNeeded()
+            // `/auth/me` is the authoritative credential check. A secondary
+            // profile request must not turn a valid signed-in user into a login
+            // screen during an update or a brief Studio restart.
+            currentUser = try await api.currentUser()
             phase = .signedIn
+            do {
+                profiles = try await api.profiles()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            selectProfileIfNeeded()
             await StudioLogoStore.shared.sync(from: api)
         } catch {
-            if case HermesError.http(401, _) = error { SecureStore.remove("token"); token = "" }
-            phase = .signedOut
+            // A development reinstall, a server restart, or one transient 401
+            // must not destructively erase a valid Keychain credential. Only an
+            // explicit Sign Out or a successful replacement login removes it.
+            // This also lets the next launch retry without asking for the token.
+            if case HermesError.http(401, _) = error {
+                phase = .signedOut
+            } else {
+                // Keep the signed-in shell and the Keychain token on transient
+                // connectivity failures. Lists can be refreshed after Studio
+                // comes back instead of asking for credentials again.
+                errorMessage = error.localizedDescription
+                phase = .signedIn
+            }
         }
     }
 

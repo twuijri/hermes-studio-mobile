@@ -975,7 +975,7 @@ private fun MessageBubble(
     val hasThinking = !line.fromUser && (
         line.streaming || line.reasoning?.isNotBlank() == true || line.tools.isNotEmpty()
     )
-    val wide = hasThinking || parsed.files.isNotEmpty()
+    val wide = !line.fromUser || hasThinking || parsed.files.isNotEmpty()
     val container = when {
         line.isError -> MaterialTheme.colorScheme.errorContainer
         line.fromUser -> MaterialTheme.colorScheme.primaryContainer
@@ -1005,7 +1005,9 @@ private fun MessageBubble(
                         )
                     }
                     if (hasThinking) ThinkingTimeline(line)
-                    if (parsed.text.isNotBlank()) Text(text = parsed.text)
+                    if (parsed.text.isNotBlank()) {
+                        if (line.fromUser) Text(text = parsed.text) else ChatMarkdownText(text = parsed.text)
+                    }
                     parsed.files.forEach { file ->
                         ChatFileCard(file = file, onDownload = { onDownload?.invoke(file) })
                     }

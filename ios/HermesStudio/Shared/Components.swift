@@ -63,54 +63,6 @@ struct AgentToolRow: View {
     }
 }
 
-struct MarkdownText: View {
-    let text: String
-    var body: some View {
-        let direction = Self.layoutDirection(for: text)
-        Group {
-            if let value = Self.attributed(text) {
-                Text(value)
-            } else {
-                Text(text)
-            }
-        }
-        .multilineTextAlignment(direction == .rightToLeft ? .trailing : .leading)
-        // The inner direction makes punctuation and list markers follow the
-        // language. The full-width outer frame fixes the physical edge: Arabic
-        // always starts on the right even when the app UI itself is English.
-        .environment(\.layoutDirection, direction)
-        .frame(maxWidth: .infinity, alignment: direction == .rightToLeft ? .trailing : .leading)
-        .environment(\.layoutDirection, .leftToRight)
-        .textSelection(.enabled)
-    }
-
-    static func attributed(_ source: String) -> AttributedString? {
-        // SwiftUI.Text ignores Markdown block presentation intents. Parsing the
-        // full document therefore collapsed paragraphs and lists into one run.
-        // Inline parsing keeps bold, links and code while preserving every line
-        // break and list marker exactly as the agent sent it.
-        try? AttributedString(
-            markdown: source,
-            options: .init(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace,
-                failurePolicy: .returnPartiallyParsedIfPossible
-            )
-        )
-    }
-
-    static func layoutDirection(for source: String) -> LayoutDirection {
-        for scalar in source.unicodeScalars {
-            switch scalar.value {
-            case 0x0590...0x08FF, 0xFB1D...0xFDFF, 0xFE70...0xFEFF:
-                return .rightToLeft
-            default:
-                if CharacterSet.letters.contains(scalar) { return .leftToRight }
-            }
-        }
-        return .leftToRight
-    }
-}
-
 struct FileDownloadCard: View {
     let link: DownloadLink
     let url: URL?

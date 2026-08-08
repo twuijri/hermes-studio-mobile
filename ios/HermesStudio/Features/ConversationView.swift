@@ -168,7 +168,13 @@ private struct MessageBubble: View {
                 ForEach(ChatFiles.links(in: line.text)) { link in FileDownloadCard(link: link, url: api.downloadURL(path: link.path, name: ChatFiles.fileName(for: link), profile: sessionProfile)) }
                 HStack(spacing: 5) { if line.isStreaming { ProgressView().controlSize(.mini) }; Text(line.timestamp.chatTime) }.font(.caption2).foregroundStyle(.secondary)
             }
-            .padding(13).background(line.fromUser ? HermesTheme.purple.opacity(0.17) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 21, style: .continuous)).frame(maxWidth: 560, alignment: .leading)
+            // Assistant replies need a real proposed width so an RTL paragraph
+            // can align against the bubble's right edge. User bubbles remain
+            // compact and grow only as much as their own content needs.
+            .frame(maxWidth: line.fromUser ? nil : .infinity, alignment: .leading)
+            .padding(13)
+            .background(line.fromUser ? HermesTheme.purple.opacity(0.17) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 21, style: .continuous))
+            .frame(maxWidth: line.fromUser ? 560 : .infinity, alignment: .leading)
             if !line.fromUser { Spacer(minLength: 24) }
         }.frame(maxWidth: .infinity)
     }

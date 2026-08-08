@@ -38,14 +38,15 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(APIClient.sessionsPath(profile: "manager"), "/api/hermes/sessions?profile=manager&limit=80")
     }
 
-    func testMarkdownPreservesArabicParagraphsAndLists() throws {
-        let source = "تم بدء العمل:\n\n1. **فحص الرسائل**\n   - عاجلة وتتطلب إجراء.\n   - طلبات معلومات.\n\n2. **تنظيف البريد**"
-        let rendered = try XCTUnwrap(MarkdownText.attributed(source))
-        let plain = String(rendered.characters)
+    func testMarkdownParsesArabicHeadingsListsAndInlineBold() throws {
+        let source = "### البريد غير المقروء\n- **635** عاجلة وتتطلب إجراء.\n  - طلبات معلومات.\n\n1. **تنظيف البريد**"
+        let blocks = ChatMarkdownParser.parse(source)
 
-        XCTAssertTrue(plain.contains("\n\n1. فحص الرسائل\n"))
-        XCTAssertTrue(plain.contains("   - عاجلة وتتطلب إجراء."))
-        XCTAssertTrue(plain.contains("\n\n2. تنظيف البريد"))
+        XCTAssertEqual(blocks[0], .heading(level: 3, text: "البريد غير المقروء"))
+        XCTAssertEqual(blocks[1], .unordered(indent: 0, text: "**635** عاجلة وتتطلب إجراء."))
+        XCTAssertEqual(blocks[2], .unordered(indent: 1, text: "طلبات معلومات."))
+        XCTAssertEqual(blocks[3], .ordered(indent: 0, marker: "1.", text: "**تنظيف البريد**"))
+        XCTAssertEqual(String(try XCTUnwrap(MarkdownText.attributed(blocks[1].text)).characters), "635 عاجلة وتتطلب إجراء.")
         XCTAssertEqual(MarkdownText.layoutDirection(for: source), .rightToLeft)
     }
 

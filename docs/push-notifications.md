@@ -100,3 +100,34 @@ suppression. APNs/FCM is the required path when the app is suspended or closed.
 Until all prerequisites and the capability endpoint exist, both apps keep the
 native notification permission untouched and continue to refresh conversations
 normally when opened.
+
+## Plugin-first deployment without an upstream Studio patch
+
+Hermes Agent user plugins provide a practical first release that does not need
+changes merged into Hermes Studio. A standalone `hermes-mobile-notifications`
+plugin can register the Agent `post_llm_call` hook and send a signed, minimal
+completion event to a Hermes Mobile notification relay. Users install it under
+`~/.hermes/plugins/`, enable it for each desired profile from Studio's Plugins
+screen, and pair it with the mobile app using a short-lived code.
+
+The plugin and relay have different responsibilities:
+
+- the plugin observes successful Hermes Agent turns and sends `session_id`,
+  profile, event id, timestamp, and a privacy-limited preview over HTTPS;
+- the relay owns the APNs key and FCM service credentials, maps paired installs
+  to device tokens, deduplicates events, and sends the native push;
+- the mobile app owns notification permission and deep-links the notification
+  back to the authenticated conversation.
+
+This can cover ordinary Hermes Agent turns and Agent-powered scheduled runs. It
+cannot promise every Studio event by itself: Studio-native coding-agent paths,
+groups, approvals, failures before `post_llm_call`, and any cron executor that
+bypasses the Hermes Agent plugin lifecycle need either a matching generic Agent
+hook or the server event contract above. The first plugin release must advertise
+the exact event coverage it detects instead of claiming universal delivery.
+
+The plugin should never contain APNs or FCM server secrets, and it should not
+accept a permanent Studio bearer token. Pairing produces a revocable,
+installation-scoped signing secret. Users can therefore uninstall or disable the
+plugin without modifying Studio core, while a later upstream event bridge can
+expand coverage without changing the app-facing notification model.
