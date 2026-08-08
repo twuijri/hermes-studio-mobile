@@ -23,7 +23,14 @@ struct SettingsView: View {
                 Link(destination: URL(string: "https://github.com/EKKOLearnAI/hermes-studio")!) { SettingsRow(icon: "chevron.left.forwardslash.chevron.right", color: .black, title: "Hermes Studio on GitHub") { Image(systemName: "arrow.up.right").foregroundStyle(.secondary) } }.foregroundStyle(.primary)
             }
             Section { Button(role: .destructive) { store.signOut() } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right").frame(maxWidth: .infinity) } }
-        }.listStyle(.insetGrouped).navigationTitle("Settings")
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Settings")
+        // SwiftUI implements RTL `List` rows with an internal mirror transform.
+        // Reusing those cells after Arabic -> System left the glyphs mirrored
+        // even though the surrounding navigation had returned to LTR. A new
+        // list identity rebuilds the cached rows whenever language changes.
+        .id(store.language)
     }
 }
 
