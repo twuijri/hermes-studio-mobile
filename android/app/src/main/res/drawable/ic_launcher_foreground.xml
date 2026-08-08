@@ -9,7 +9,7 @@
     <path
         android:fillColor="@android:color/transparent"
         android:pathData="M54,24 L54,47"
-        android:strokeColor="#FFFDFD"
+        android:strokeColor="#FEFEFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="9" />
@@ -17,15 +17,15 @@
     <!-- Independent agent inputs. -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M38,38 L38,52 Q38,55 35.5,56.5 L25,63"
-        android:strokeColor="#FFFDFD"
+        android:pathData="M38,38 L38,52 L25,63"
+        android:strokeColor="#FEFEFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="9" />
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M70,38 L70,52 Q70,55 72.5,56.5 L83,63"
-        android:strokeColor="#FFFDFD"
+        android:pathData="M70,38 L70,52 L83,63"
+        android:strokeColor="#FEFEFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="9" />
@@ -33,11 +33,19 @@
     <!-- Unified result flow. -->
     <path
         android:fillColor="@android:color/transparent"
-        android:pathData="M31,76 L48.5,64.5 Q54,61 59.5,64.5 L77,76"
-        android:strokeColor="#FFFDFD"
+        android:pathData="M31,76 L50,64 L58,64 L77,76"
+        android:strokeColor="#FEFEFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="9" />
+
+    <!--
+        Intentional brand clearance: erase the strokes around the orchestration
+        core before drawing it, so the purple point stays visibly independent.
+    -->
+    <path
+        android:fillColor="@color/ic_launcher_background"
+        android:pathData="M54,44 A10,10 0,1 1,54,64 A10,10 0,1 1,54,44" />
 
     <!-- Central intelligence. -->
     <path

@@ -60,4 +60,14 @@ class IconSemanticsTest {
         assertFalse("the old sun placeholder must not represent models", activity.contains("Icons.Filled.WbSunny"))
         assertFalse("settings must not reuse the old sun placeholder", studioSettings.contains("Icons.Filled.WbSunny"))
     }
+
+    @Test
+    fun launcherKeepsThePurpleCoreVisuallySeparated() {
+        val foreground = File(drawableDir, "ic_launcher_foreground.xml").readText()
+        val colors = File("src/main/res/values/colors.xml").readText()
+
+        assertTrue("launcher needs the brand clearance ring", foreground.contains("M54,44 A10,10"))
+        assertTrue("clearance must match the icon background", foreground.contains("@color/ic_launcher_background"))
+        assertTrue("launcher background must match the iOS master", colors.contains("#091125"))
+    }
 }
