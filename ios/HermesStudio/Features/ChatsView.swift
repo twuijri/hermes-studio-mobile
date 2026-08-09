@@ -58,7 +58,6 @@ struct ChatsView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh")
-                NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }.accessibilityLabel("Settings")
                 NavigationLink { ConversationView(session: newSession) } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("New conversation")
             }
         }

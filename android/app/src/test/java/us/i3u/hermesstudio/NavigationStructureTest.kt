@@ -20,6 +20,20 @@ class NavigationStructureTest {
     }
 
     @Test
+    fun settingsHasOneRootEntryPointAndTabsAlwaysNavigateHome() {
+        val chats = activity.substringAfter("private fun ChatsScreen")
+            .substringBefore("private fun ProfileFilterRow")
+        val agent = activity.substringAfter("private fun AgentHubScreen")
+            .substringBefore("/** App settings stay intentionally small")
+
+        assertFalse("Chats must not duplicate the Settings shortcut", chats.contains("openSettings()"))
+        assertTrue("Agent must retain the Settings shortcut", agent.contains("openSettings()"))
+        listOf("Tab.Chats", "Tab.Groups", "Tab.Agent").forEach { tab ->
+            assertTrue("Bottom tab must always navigate to $tab home", activity.contains("onClick = { viewModel.showTab($tab) }"))
+        }
+    }
+
+    @Test
     fun agentHubOwnsAgentToolsAndIntelligence() {
         val hub = activity.substringAfter("private fun AgentHubScreen")
             .substringBefore("/** App settings stay intentionally small")

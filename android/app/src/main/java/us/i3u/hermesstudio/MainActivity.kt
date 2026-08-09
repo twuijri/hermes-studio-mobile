@@ -386,9 +386,6 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
                     ) {
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh), tint = MaterialTheme.colorScheme.primary)
                     }
-                    IconButton(onClick = { viewModel.openSettings() }) {
-                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.action_settings), tint = MaterialTheme.colorScheme.primary)
-                    }
                     IconButton(onClick = { viewModel.startNewConversation() }) {
                         Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_new_chat), tint = MaterialTheme.colorScheme.primary)
                     }

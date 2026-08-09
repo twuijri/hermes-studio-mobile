@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 internal sealed interface ChatMarkdownBlock {
     val text: String
@@ -244,10 +245,11 @@ internal fun ChatMarkdownText(text: String, modifier: Modifier = Modifier) {
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
                     fontWeight = FontWeight.Bold,
                     style = when (block.level) {
-                        1 -> MaterialTheme.typography.titleLarge
-                        2 -> MaterialTheme.typography.titleMedium
-                        3 -> MaterialTheme.typography.titleSmall
-                        else -> MaterialTheme.typography.bodyLarge
+                        1 -> MaterialTheme.typography.headlineSmall
+                        2 -> MaterialTheme.typography.titleLarge
+                        3 -> MaterialTheme.typography.titleMedium.copy(fontSize = 19.sp, lineHeight = 26.sp)
+                        4 -> MaterialTheme.typography.titleMedium
+                        else -> MaterialTheme.typography.titleSmall
                     },
                 )
                 is ChatMarkdownBlock.Unordered -> MarkdownListRow("◦", block.text, block.indent, subtleMarker = true)
