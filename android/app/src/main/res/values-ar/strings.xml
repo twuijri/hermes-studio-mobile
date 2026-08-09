@@ -124,6 +124,7 @@
     <string name="reasoning_low">منخفض</string>
     <string name="reasoning_medium">متوسط</string>
     <string name="reasoning_high">مرتفع</string>
+    <string name="reasoning_extra_high">مرتفع جدًا</string>
     <string name="reasoning_use_profile">استخدم افتراضي البروفايل</string>
 
     <!-- البروفايلات -->
@@ -135,9 +136,14 @@
     <!-- الإعدادات -->
     <string name="settings_title">الإعدادات</string>
     <string name="more_settings_title">إعدادات إضافية</string>
-    <string name="more_settings_note">الحساب والأمان والعرض والبروكسي والجلسات والخصوصية</string>
-    <string name="more_settings_subtitle">إعدادات الاستديو والحساب</string>
+    <string name="more_settings_note">جميع إعدادات هرمز استديو في مكان واحد</string>
+    <string name="more_settings_footer">تبقى أدوات الوكيل في تبويب الوكيل، وتُجمع إعدادات الاستديو هنا لتبسيط التنقل.</string>
+    <string name="more_settings_subtitle">إعدادات الاستديو في مكان واحد</string>
     <string name="more_settings_studio">سلوك الاستديو</string>
+    <string name="more_settings_agent">الوكيل</string>
+    <string name="more_settings_conversation">المحادثة</string>
+    <string name="more_settings_network_privacy">الشبكة والخصوصية</string>
+    <string name="more_settings_management">الإدارة</string>
     <string name="settings_section_server">السيرفر</string>
     <string name="settings_section_profile">البروفايل النشط</string>
     <string name="settings_section_appearance">المظهر</string>
@@ -145,6 +151,11 @@
     <string name="settings_section_account">الحساب</string>
     <string name="settings_section_about">عن التطبيق</string>
     <string name="settings_section_studio">الاستديو</string>
+    <string name="settings_studio_connection">اتصال الاستديو</string>
+    <string name="settings_appearance">المظهر</string>
+    <string name="appearance_system">النظام</string>
+    <string name="appearance_light">فاتح</string>
+    <string name="appearance_dark">داكن</string>
     <string name="settings_address">العنوان</string>
     <string name="settings_address_missing">غير محدد</string>
     <string name="settings_account">الحساب</string>
@@ -169,6 +180,9 @@
     <string name="settings_sign_out_note">يحذف الرمز المحفوظ من هذا الجهاز</string>
     <string name="settings_version">الإصدار</string>
     <string name="settings_about_note">تطبيق مجتمعي غير رسمي لهرمز استديو. الصور الرمزية المولّدة من Multiavatar.com.</string>
+    <string name="settings_phone_name">هرمز استديو فون</string>
+    <string name="settings_phone_github">مستودع هرمز استديو فون على GitHub</string>
+    <string name="settings_studio_github">مستودع هرمز استديو على GitHub</string>
 
     <string name="action_rename">إعادة تسمية</string>
     <string name="action_delete">حذف</string>
@@ -336,7 +350,7 @@
     <string name="settings_category_account">الحساب</string>
     <string name="settings_category_profile">البروفايل النشط</string>
     <string name="settings_category_integrations">الربط والأتمتة</string>
-    <string name="settings_category_app">الواجهة والتطبيق</string>
+    <string name="settings_category_app">التطبيق</string>
     <string name="settings_group_users">إدارة الحسابات</string>
     <string name="settings_group_users_note">إنشاء المستخدمين وتحديد أدوارهم وحالتهم والبروفايلات المتاحة</string>
     <string name="settings_group_models">مزوّدو الموديلات</string>

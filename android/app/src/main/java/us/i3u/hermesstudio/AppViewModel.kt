@@ -23,7 +23,7 @@ enum class Screen {
 
 /** Settings is a short list of these; each opens its own screen. */
 enum class SettingsGroup {
-    Server, Users, Profile, Models, Agent, Memory, Compression, Sessions,
+    Account, Server, Users, Profile, Models, Agent, Memory, Compression, Sessions,
     Privacy, Proxy, Display, Device, About,
 }
 
@@ -103,6 +103,8 @@ data class UiState(
     val reasoningEffort: String = "",
     /** BCP-47 tag chosen in Settings; blank follows the system. */
     val language: String = "",
+    /** system, light, or dark. */
+    val appearance: String = "system",
     val sessionModel: String? = null,
     val sessionProvider: String? = null,
     val defaultModel: String? = null,
@@ -184,6 +186,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             baseUrl = store.baseUrl,
             reasoningEffort = store.reasoningEffort,
             language = store.language,
+            appearance = store.appearance,
         ),
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -1674,7 +1677,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 notice = null,
                 loadingAgentSettings = group == SettingsGroup.Agent,
                 loadingStudioSettings = group in STUDIO_CONFIG_GROUPS,
-                loadingAccountSettings = group == SettingsGroup.Server,
+                loadingAccountSettings = group == SettingsGroup.Account,
                 loadingManagedUsers = group == SettingsGroup.Users,
                 loadingModelProviders = group == SettingsGroup.Models,
             )
@@ -1682,7 +1685,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (group == SettingsGroup.Agent) loadAgentSettings()
         if (group == SettingsGroup.Profile) loadModels()
         if (group in STUDIO_CONFIG_GROUPS) loadStudioSettings()
-        if (group == SettingsGroup.Server) loadAccountSettings()
+        if (group == SettingsGroup.Account) loadAccountSettings()
         if (group == SettingsGroup.Users) loadManagedUsers()
         if (group == SettingsGroup.Models) loadModelProviders()
     }
@@ -2482,6 +2485,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 baseUrl = store.baseUrl,
                 reasoningEffort = store.reasoningEffort,
                 language = store.language,
+                appearance = store.appearance,
             )
         }
     }
@@ -2490,6 +2494,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setLanguage(tag: String) {
         store.language = tag
         _state.update { it.copy(language = tag) }
+    }
+
+    fun setAppearance(value: String) {
+        store.appearance = value
+        _state.update { it.copy(appearance = value) }
     }
 
     private fun str(id: Int, vararg args: Any): String = localized.getString(id, *args)

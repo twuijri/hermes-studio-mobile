@@ -19,18 +19,16 @@ struct SettingsView: View {
                 NavigationLink { MoreSettingsView() } label: { SettingsRow(icon: "slider.horizontal.3", color: .orange, title: "More Settings", subtitle: String(localized: "All Hermes Studio settings in one place")) }
             } footer: { Text("Agent tools stay in the Agent tab. Studio configuration is collected here to keep navigation simple.") }
             Section("About") {
-                HStack { SettingsRow(icon: "app.badge.fill", color: HermesTheme.purple, title: "Hermes Studio") { Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0").foregroundStyle(.secondary) } }
+                HStack { SettingsRow(icon: "app.badge.fill", color: HermesTheme.purple, title: "Hermes Studio Phone") { Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0").foregroundStyle(.secondary) } }
+                Link(destination: URL(string: "https://github.com/twuijri/hermes-studio-mobile")!) { SettingsRow(icon: "iphone", color: HermesTheme.purple, title: "Hermes Studio Phone on GitHub") { Image(systemName: "arrow.up.right").foregroundStyle(.secondary) } }.foregroundStyle(.primary)
                 Link(destination: URL(string: "https://github.com/EKKOLearnAI/hermes-studio")!) { SettingsRow(icon: "chevron.left.forwardslash.chevron.right", color: .black, title: "Hermes Studio on GitHub") { Image(systemName: "arrow.up.right").foregroundStyle(.secondary) } }.foregroundStyle(.primary)
             }
             Section { Button(role: .destructive) { store.signOut() } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right").frame(maxWidth: .infinity) } }
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Settings")
-        // SwiftUI implements RTL `List` rows with an internal mirror transform.
-        // Reusing those cells after Arabic -> System left the glyphs mirrored
-        // even though the surrounding navigation had returned to LTR. A new
-        // list identity rebuilds the cached rows once immediately and once on
-        // the next settled layout pass (see AppStore.setLanguage).
+        // Rebuild this visible list together with the three root lists after
+        // UIKit's direction transform has settled (see AppStore.setLanguage).
         .id("\(store.language)-\(store.languageRefresh)")
     }
 }

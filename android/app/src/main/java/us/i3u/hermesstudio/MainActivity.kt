@@ -3,6 +3,7 @@ package us.i3u.hermesstudio
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -40,6 +41,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -93,6 +95,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -168,17 +171,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            HermesTheme {
-                Surface(modifier = Modifier.fillMaxSize()) { App() }
-            }
-        }
+        setContent { App() }
     }
 }
 
 @Composable
 private fun App(viewModel: AppViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
+
+    HermesTheme(appearance = state.appearance) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            AppContent(state, viewModel)
+        }
+    }
+}
+
+@Composable
+private fun AppContent(state: UiState, viewModel: AppViewModel) {
 
     // The system back gesture belongs to the app while there is somewhere to go
     // back to. Only the two root lists let it fall through and close the app.
@@ -1623,12 +1632,27 @@ private val REASONING_LEVELS = listOf(
     "low" to R.string.reasoning_low,
     "medium" to R.string.reasoning_medium,
     "high" to R.string.reasoning_high,
+    "xhigh" to R.string.reasoning_extra_high,
+)
+
+private val APPEARANCE_LEVELS = listOf(
+    "system" to R.string.appearance_system,
+    "light" to R.string.appearance_light,
+    "dark" to R.string.appearance_dark,
 )
 
 @Composable
 private fun reasoningLabel(effort: String): String = stringResource(
     REASONING_LEVELS.firstOrNull { it.first == effort }?.second ?: R.string.reasoning_default,
 )
+
+@Composable
+private fun appearanceLabel(appearance: String): String = stringResource(
+    APPEARANCE_LEVELS.firstOrNull { it.first == appearance }?.second ?: R.string.appearance_system,
+)
+
+private const val PHONE_REPOSITORY_URL = "https://github.com/twuijri/hermes-studio-mobile"
+private const val STUDIO_REPOSITORY_URL = "https://github.com/EKKOLearnAI/hermes-studio"
 
 @Composable
 private fun SendOrRecordButton(
@@ -2174,7 +2198,68 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
+    val context = LocalContext.current
+    val activity = context as? Activity
     val accountName = state.account.orEmpty().ifBlank { stringResource(R.string.settings_account_unknown) }
+    val language = APP_LANGUAGES.firstOrNull { it.tag == state.language } ?: APP_LANGUAGES.first()
+    var appearanceSheet by remember { mutableStateOf(false) }
+    var languageSheet by remember { mutableStateOf(false) }
+    var reasoningSheet by remember { mutableStateOf(false) }
+    var confirmSignOut by remember { mutableStateOf(false) }
+
+    if (appearanceSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { appearanceSheet = false },
+            sheetState = rememberModalBottomSheetState(),
+        ) {
+            PickerSheet(
+                title = stringResource(R.string.settings_appearance),
+                loading = false,
+                rows = APPEARANCE_LEVELS.map { (value, label) ->
+                    PickerRow(
+                        label = stringResource(label),
+                        detail = null,
+                        selected = state.appearance == value,
+                    ) {
+                        appearanceSheet = false
+                        viewModel.setAppearance(value)
+                        activity?.recreate()
+                    }
+                },
+            )
+        }
+    }
+    if (languageSheet) LanguageSheet(state, viewModel) { languageSheet = false }
+    if (reasoningSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { reasoningSheet = false },
+            sheetState = rememberModalBottomSheetState(),
+        ) {
+            PickerSheet(
+                title = stringResource(R.string.settings_reasoning),
+                loading = false,
+                rows = REASONING_LEVELS.map { (value, label) ->
+                    PickerRow(
+                        label = stringResource(label),
+                        detail = if (value.isBlank()) stringResource(R.string.reasoning_use_profile) else null,
+                        selected = state.reasoningEffort == value,
+                    ) {
+                        reasoningSheet = false
+                        viewModel.setReasoningEffort(value)
+                    }
+                },
+            )
+        }
+    }
+    if (confirmSignOut) {
+        ConfirmDialog(
+            title = stringResource(R.string.confirm_sign_out_title),
+            body = stringResource(R.string.confirm_sign_out_body),
+            action = stringResource(R.string.action_sign_out),
+            onConfirm = { viewModel.signOut() },
+            onDismiss = { confirmSignOut = false },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -2203,11 +2288,10 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
             state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
             state.notice?.let { message -> item { NoticeNote(message) { viewModel.dismissNotice() } } }
 
-            item { StudioSectionTitle(stringResource(R.string.settings_section_account)) }
             item {
                 StudioGroupedCard {
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { viewModel.openSettingsGroup(SettingsGroup.Server) }
+                        modifier = Modifier.fillMaxWidth().clickable { viewModel.openSettingsGroup(SettingsGroup.Account) }
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -2229,12 +2313,7 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-            }
-
-            item { StudioSectionTitle(stringResource(R.string.settings_section_studio)) }
-            item {
-                StudioGroupedCard {
+                    StudioCardDivider()
                     StudioDestinationRow(
                         icon = Icons.Filled.Person,
                         color = Color(0xFF4D8DFF),
@@ -2244,11 +2323,11 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
                     )
                     StudioCardDivider()
                     StudioDestinationRow(
-                        icon = Icons.Filled.Tune,
-                        color = Color(0xFF7A5CFF),
-                        title = stringResource(R.string.more_settings_title),
-                        subtitle = stringResource(R.string.more_settings_note),
-                        onClick = { viewModel.openMoreSettings() },
+                        icon = Icons.Filled.Dns,
+                        color = Color(0xFF35C878),
+                        title = stringResource(R.string.settings_studio_connection),
+                        subtitle = state.baseUrl,
+                        onClick = { viewModel.openSettingsGroup(SettingsGroup.Server) },
                     )
                 }
             }
@@ -2257,20 +2336,102 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
             item {
                 StudioGroupedCard {
                     StudioDestinationRow(
+                        icon = Icons.Filled.DisplaySettings,
+                        color = Color(0xFF6F72E8),
+                        title = stringResource(R.string.settings_appearance),
+                        subtitle = appearanceLabel(state.appearance),
+                        onClick = { appearanceSheet = true },
+                    )
+                    StudioCardDivider()
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Language,
+                        color = Color(0xFF18B9C7),
+                        title = stringResource(R.string.settings_language),
+                        subtitle = AppLocale.labelFor(context, language),
+                        onClick = { languageSheet = true },
+                    )
+                    StudioCardDivider()
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Psychology,
+                        color = Color(0xFFD62AE8),
+                        title = stringResource(R.string.settings_reasoning),
+                        subtitle = reasoningLabel(state.reasoningEffort),
+                        onClick = { reasoningSheet = true },
+                    )
+                }
+            }
+
+            item { Spacer(Modifier.height(16.dp)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Tune,
+                        color = Color(0xFFFF9F43),
+                        title = stringResource(R.string.more_settings_title),
+                        subtitle = stringResource(R.string.more_settings_note),
+                        onClick = { viewModel.openMoreSettings() },
+                    )
+                }
+            }
+            item {
+                Text(
+                    stringResource(R.string.more_settings_footer),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                )
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.settings_section_about)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(
                         icon = Icons.Filled.PhoneAndroid,
-                        color = Color(0xFF39C6A3),
-                        title = stringResource(R.string.settings_group_device),
-                        subtitle = stringResource(R.string.settings_group_device_note),
-                        onClick = { viewModel.openSettingsGroup(SettingsGroup.Device) },
+                        color = Color(0xFF7A5CFF),
+                        title = stringResource(R.string.settings_phone_name),
+                        trailing = {
+                            Text(
+                                BuildConfig.VERSION_NAME,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        },
+                    )
+                    StudioCardDivider()
+                    StudioDestinationRow(
+                        icon = Icons.Filled.PhoneAndroid,
+                        color = Color(0xFF7A5CFF),
+                        title = stringResource(R.string.settings_phone_github),
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PHONE_REPOSITORY_URL)))
+                        },
+                        trailing = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
                     )
                     StudioCardDivider()
                     StudioDestinationRow(
                         icon = Icons.Filled.Info,
                         color = Color(0xFF8E8E93),
-                        title = stringResource(R.string.settings_section_about),
-                        subtitle = stringResource(R.string.settings_group_about_note),
-                        onClick = { viewModel.openSettingsGroup(SettingsGroup.About) },
+                        title = stringResource(R.string.settings_studio_github),
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(STUDIO_REPOSITORY_URL)))
+                        },
+                        trailing = { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null) },
                     )
+                }
+            }
+
+            item { Spacer(Modifier.height(20.dp)) }
+            item {
+                StudioGroupedCard {
+                    TextButton(
+                        onClick = { confirmSignOut = true },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.action_sign_out), style = MaterialTheme.typography.titleMedium)
+                    }
                 }
             }
         }
@@ -2302,18 +2463,41 @@ private fun MoreSettingsScreen(state: UiState, viewModel: AppViewModel) {
             state.error?.let { message -> item { ErrorNote(message) { viewModel.dismissError() } } }
             state.notice?.let { message -> item { NoticeNote(message) { viewModel.dismissNotice() } } }
 
-            item { StudioSectionTitle(stringResource(R.string.settings_category_account)) }
+            item { StudioSectionTitle(stringResource(R.string.more_settings_agent)) }
             item {
                 StudioGroupedCard {
-                    StudioDestinationRow(
-                        icon = Icons.Filled.Dns,
-                        color = Color(0xFF4D8DFF),
-                        title = stringResource(R.string.settings_group_server),
-                        subtitle = state.baseUrl.ifBlank { stringResource(R.string.settings_group_server_note) },
-                        onClick = { viewModel.openSettingsGroup(SettingsGroup.Server) },
-                    )
-                    if (state.currentUser?.role == "super_admin") {
-                        StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Tune, Color(0xFF7A5CFF), stringResource(R.string.settings_group_agent), stringResource(R.string.settings_group_agent_note), { viewModel.openSettingsGroup(SettingsGroup.Agent) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Memory, Color(0xFFFFB547), stringResource(R.string.settings_group_memory), stringResource(R.string.settings_group_memory_note), { viewModel.openSettingsGroup(SettingsGroup.Memory) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Compress, Color(0xFFFF9F43), stringResource(R.string.settings_group_compression), stringResource(R.string.settings_group_compression_note), { viewModel.openSettingsGroup(SettingsGroup.Compression) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.ModelTraining, Color(0xFF39C6A3), stringResource(R.string.settings_group_models), stringResource(R.string.settings_group_models_note), { viewModel.openSettingsGroup(SettingsGroup.Models) })
+                }
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.more_settings_conversation)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(Icons.Filled.DisplaySettings, Color(0xFFFF6584), stringResource(R.string.settings_group_display), stringResource(R.string.settings_group_display_note), { viewModel.openSettingsGroup(SettingsGroup.Display) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.History, Color(0xFF6F72E8), stringResource(R.string.settings_group_sessions), stringResource(R.string.settings_group_sessions_note), { viewModel.openSettingsGroup(SettingsGroup.Sessions) })
+                }
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.more_settings_network_privacy)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(Icons.Filled.VpnLock, Color(0xFF18B9C7), stringResource(R.string.settings_group_proxy), stringResource(R.string.settings_group_proxy_note), { viewModel.openSettingsGroup(SettingsGroup.Proxy) })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.PrivacyTip, Color(0xFFE85262), stringResource(R.string.settings_group_privacy), stringResource(R.string.settings_group_privacy_note), { viewModel.openSettingsGroup(SettingsGroup.Privacy) })
+                }
+            }
+
+            if (state.currentUser?.role == "super_admin") {
+                item { StudioSectionTitle(stringResource(R.string.more_settings_management)) }
+                item {
+                    StudioGroupedCard {
                         StudioDestinationRow(
                             icon = Icons.Filled.Group,
                             color = Color(0xFF35B7DB),
@@ -2322,25 +2506,6 @@ private fun MoreSettingsScreen(state: UiState, viewModel: AppViewModel) {
                             onClick = { viewModel.openSettingsGroup(SettingsGroup.Users) },
                         )
                     }
-                }
-            }
-
-            item { StudioSectionTitle(stringResource(R.string.more_settings_studio)) }
-            item {
-                StudioGroupedCard {
-                    StudioDestinationRow(Icons.Filled.Person, Color(0xFF7A5CFF), stringResource(R.string.settings_group_profile), state.activeProfile, { viewModel.openSettingsGroup(SettingsGroup.Profile) })
-                    StudioCardDivider()
-                    StudioDestinationRow(Icons.Filled.Tune, Color(0xFFFF9F43), stringResource(R.string.settings_group_agent), stringResource(R.string.settings_group_agent_note), { viewModel.openSettingsGroup(SettingsGroup.Agent) })
-                    StudioCardDivider()
-                    StudioDestinationRow(Icons.Filled.Compress, Color(0xFFB45CFF), stringResource(R.string.settings_group_compression), stringResource(R.string.settings_group_compression_note), { viewModel.openSettingsGroup(SettingsGroup.Compression) })
-                    StudioCardDivider()
-                    StudioDestinationRow(Icons.Filled.History, Color(0xFF39C6A3), stringResource(R.string.settings_group_sessions), stringResource(R.string.settings_group_sessions_note), { viewModel.openSettingsGroup(SettingsGroup.Sessions) })
-                    StudioCardDivider()
-                    StudioDestinationRow(Icons.Filled.PrivacyTip, Color(0xFF45C878), stringResource(R.string.settings_group_privacy), stringResource(R.string.settings_group_privacy_note), { viewModel.openSettingsGroup(SettingsGroup.Privacy) })
-                    StudioCardDivider()
-                    StudioDestinationRow(Icons.Filled.VpnLock, Color(0xFF4D8DFF), stringResource(R.string.settings_group_proxy), stringResource(R.string.settings_group_proxy_note), { viewModel.openSettingsGroup(SettingsGroup.Proxy) })
-                    StudioCardDivider()
-                    StudioDestinationRow(Icons.Filled.DisplaySettings, Color(0xFFFF6584), stringResource(R.string.settings_group_display), stringResource(R.string.settings_group_display_note), { viewModel.openSettingsGroup(SettingsGroup.Display) })
                 }
             }
         }
@@ -2353,6 +2518,7 @@ private fun SettingsGroupScreen(state: UiState, viewModel: AppViewModel) {
     val group = state.openGroup ?: return
     val title = stringResource(
         when (group) {
+            SettingsGroup.Account -> R.string.settings_account
             SettingsGroup.Server -> R.string.settings_group_server
             SettingsGroup.Users -> R.string.settings_group_users
             SettingsGroup.Profile -> R.string.settings_group_profile
@@ -2389,6 +2555,7 @@ private fun SettingsGroupScreen(state: UiState, viewModel: AppViewModel) {
                 !state.loadingModelProviders
             ) {
                 when (group) {
+                    SettingsGroup.Account -> AccountSettings(state, viewModel)
                     SettingsGroup.Server -> ServerSettings(state, viewModel)
                     SettingsGroup.Users -> ManagedUsersSettings(state, viewModel)
                     SettingsGroup.Profile -> ProfileSettings(state, viewModel)
@@ -2410,34 +2577,21 @@ private fun SettingsGroupScreen(state: UiState, viewModel: AppViewModel) {
 
 @Composable
 private fun ServerSettings(state: UiState, viewModel: AppViewModel) {
-    var confirmSignOut by remember { mutableStateOf(false) }
-    if (confirmSignOut) {
-        ConfirmDialog(
-            title = stringResource(R.string.confirm_sign_out_title),
-            body = stringResource(R.string.confirm_sign_out_body),
-            action = stringResource(R.string.action_sign_out),
-            onConfirm = { viewModel.signOut() },
-            onDismiss = { confirmSignOut = false },
-        )
-    }
-
     SettingsRow(
         icon = Icons.Filled.Dns,
         label = stringResource(R.string.settings_address),
         value = state.baseUrl.ifBlank { stringResource(R.string.settings_address_missing) },
     )
+}
+
+@Composable
+private fun AccountSettings(state: UiState, viewModel: AppViewModel) {
     SettingsRow(
         icon = Icons.Filled.Person,
         label = stringResource(R.string.settings_account),
         value = state.account ?: stringResource(R.string.settings_account_unknown),
     )
     AccountStudioSettings(state, viewModel)
-    SettingsRow(
-        icon = Icons.AutoMirrored.Filled.Logout,
-        label = stringResource(R.string.action_sign_out),
-        value = stringResource(R.string.settings_sign_out_note),
-        onClick = { confirmSignOut = true },
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

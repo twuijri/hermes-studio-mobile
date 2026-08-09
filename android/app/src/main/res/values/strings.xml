@@ -125,6 +125,7 @@
     <string name="reasoning_low">Low</string>
     <string name="reasoning_medium">Medium</string>
     <string name="reasoning_high">High</string>
+    <string name="reasoning_extra_high">Extra high</string>
     <string name="reasoning_use_profile">Use the profile default</string>
 
     <!-- Profiles -->
@@ -136,9 +137,14 @@
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="more_settings_title">More settings</string>
-    <string name="more_settings_note">Account, security, display, proxy, sessions, and privacy</string>
-    <string name="more_settings_subtitle">Studio and account settings</string>
+    <string name="more_settings_note">All Hermes Studio settings in one place</string>
+    <string name="more_settings_footer">Agent tools stay in the Agent tab. Studio configuration is collected here to keep navigation simple.</string>
+    <string name="more_settings_subtitle">Studio settings in one place</string>
     <string name="more_settings_studio">Studio behavior</string>
+    <string name="more_settings_agent">Agent</string>
+    <string name="more_settings_conversation">Conversation</string>
+    <string name="more_settings_network_privacy">Network &amp; privacy</string>
+    <string name="more_settings_management">Management</string>
     <string name="settings_section_server">Server</string>
     <string name="settings_section_profile">Active profile</string>
     <string name="settings_section_appearance">Appearance</string>
@@ -146,6 +152,11 @@
     <string name="settings_section_account">Account</string>
     <string name="settings_section_about">About</string>
     <string name="settings_section_studio">Studio</string>
+    <string name="settings_studio_connection">Studio connection</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="appearance_system">System</string>
+    <string name="appearance_light">Light</string>
+    <string name="appearance_dark">Dark</string>
     <string name="settings_address">Address</string>
     <string name="settings_address_missing">not set</string>
     <string name="settings_account">Account</string>
@@ -170,6 +181,9 @@
     <string name="settings_sign_out_note">Removes the stored token from this device</string>
     <string name="settings_version">Version</string>
     <string name="settings_about_note">Unofficial community client for Hermes Studio. Generated profile pictures: avatars by Multiavatar.com.</string>
+    <string name="settings_phone_name">Hermes Studio Phone</string>
+    <string name="settings_phone_github">Hermes Studio Phone on GitHub</string>
+    <string name="settings_studio_github">Hermes Studio on GitHub</string>
 
     <string name="action_rename">Rename</string>
     <string name="action_delete">Delete</string>
@@ -337,7 +351,7 @@
     <string name="settings_category_account">Account</string>
     <string name="settings_category_profile">Active profile</string>
     <string name="settings_category_integrations">Integrations and automation</string>
-    <string name="settings_category_app">Interface and app</string>
+    <string name="settings_category_app">App</string>
     <string name="settings_group_users">Account management</string>
     <string name="settings_group_users_note">Create users, roles, status, and profile access</string>
     <string name="settings_group_models">Model providers</string>

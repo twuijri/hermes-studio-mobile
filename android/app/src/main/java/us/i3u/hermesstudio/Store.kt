@@ -56,6 +56,11 @@ class Store(context: Context) {
         get() = prefs.getString(KEY_LANGUAGE, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_LANGUAGE, value).apply()
 
+    /** system, light, or dark. Kept separately from Studio's display settings. */
+    var appearance: String
+        get() = prefs.getString(KEY_APPEARANCE, "system").orEmpty().ifBlank { "system" }
+        set(value) = prefs.edit().putString(KEY_APPEARANCE, value).apply()
+
     var reasoningEffort: String
         get() = prefs.getString(KEY_REASONING, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_REASONING, value).apply()
@@ -77,5 +82,6 @@ class Store(context: Context) {
         const val KEY_REASONING = "reasoning_effort"
         const val KEY_ONBOARDED = "onboarded"
         const val KEY_LANGUAGE = "language"
+        const val KEY_APPEARANCE = "appearance"
     }
 }

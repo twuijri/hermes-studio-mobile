@@ -149,8 +149,12 @@
 "Reasoning effort" = "مستوى التفكير";
 "More Settings" = "إعدادات إضافية";
 "All Hermes Studio settings in one place" = "جميع إعدادات هرمز استديو في مكان واحد";
+"Agent tools stay in the Agent tab. Studio configuration is collected here to keep navigation simple." = "تبقى أدوات الوكيل في تبويب الوكيل، وتُجمع إعدادات الاستديو هنا لتبسيط التنقل.";
 "About" = "حول التطبيق";
 "Sign out" = "تسجيل الخروج";
+"Hermes Studio Phone" = "هرمز استديو فون";
+"Hermes Studio Phone on GitHub" = "مستودع هرمز استديو فون على GitHub";
+"Hermes Studio on GitHub" = "مستودع هرمز استديو على GitHub";
 "Studio address" = "عنوان الاستديو";
 "Save and test connection" = "حفظ الاتصال واختباره";
 "Account" = "الحساب";

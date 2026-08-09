@@ -19,6 +19,13 @@ struct HermesStudioApp: App {
                 } else if let message = store.successMessage {
                     Label(message, systemImage: "checkmark.circle.fill").font(.footnote.weight(.medium)).foregroundStyle(.white).padding(11).background(.green.gradient, in: Capsule()).padding(.top, 8).transition(.move(edge: .top).combined(with: .opacity))
                 }
+                if store.languageTransitioning {
+                    Color(uiColor: .systemBackground)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                        .zIndex(100)
+                        .accessibilityHidden(true)
+                }
             }
             .environmentObject(store)
             .environment(\.locale, store.locale)
@@ -28,6 +35,7 @@ struct HermesStudioApp: App {
             .task { await store.boot() }
             .animation(.snappy, value: store.errorMessage)
             .animation(.snappy, value: store.successMessage)
+            .animation(.easeInOut(duration: 0.11), value: store.languageTransitioning)
         }
     }
 }

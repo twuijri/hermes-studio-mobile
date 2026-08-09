@@ -122,11 +122,14 @@ internal fun StudioDestinationRow(
     color: Color,
     title: String,
     subtitle: String? = null,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         StudioIconTile(icon, color)
@@ -144,7 +147,7 @@ internal fun StudioDestinationRow(
             }
         }
         if (trailing != null) trailing()
-        else Icon(
+        else if (onClick != null) Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,

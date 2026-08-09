@@ -11,11 +11,13 @@ final class AppStore: ObservableObject {
     @Published var selectedProfile = Preferences.profile
     @Published var language = Preferences.language
     @Published private(set) var languageRefresh = 0
+    @Published private(set) var languageTransitioning = false
     @Published var appearance = Preferences.appearance
     @Published var reasoningEffort = Preferences.reasoningEffort
     @Published var errorMessage: String?
     @Published var successMessage: String?
     @Published var busy = false
+    @Published var selectedRootTab = 0
 
     private var languageRefreshTask: Task<Void, Never>?
 
@@ -110,18 +112,28 @@ final class AppStore: ObservableObject {
     }
 
     func setLanguage(_ value: String) {
-        language = value
-        Preferences.language = value
-
-        // UIKit-backed SwiftUI Lists apply their RTL mirror one render pass
-        // after the environment changes. Rebuild once more after that pass so
-        // Arabic -> System/English cannot retain mirrored glyphs. A later
-        // selection cancels the pending refresh instead of racing with it.
         languageRefreshTask?.cancel()
+        guard value != language else {
+            languageTransitioning = false
+            return
+        }
+        languageTransitioning = true
+
+        // UIKit-backed SwiftUI lists keep their previous mirror transform for
+        // more than one render pass. First fade in a neutral cover, then change
+        // direction behind it and rebuild every cached root list. The cover
+        // fades out only after the new direction has settled everywhere.
         languageRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(110))
+            guard !Task.isCancelled, let self else { return }
+            self.language = value
+            Preferences.language = value
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
-            self?.languageRefresh &+= 1
+            self.languageRefresh &+= 1
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled else { return }
+            self.languageTransitioning = false
         }
     }
     func setAppearance(_ value: String) { appearance = value; Preferences.appearance = value }

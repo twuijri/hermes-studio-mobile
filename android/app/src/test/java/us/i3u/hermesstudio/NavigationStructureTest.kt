@@ -43,33 +43,36 @@ class NavigationStructureTest {
     }
 
     @Test
-    fun settingsHomeHasOneDoorToNonAgentStudioSettings() {
+    fun settingsHomeMatchesThePhoneInformationArchitecture() {
         val settings = activity.substringAfter("private fun SettingsScreen")
             .substringBefore("/** The non-agent Studio settings")
         assertTrue(settings.contains("openMoreSettings()"))
-        assertTrue(settings.contains("SettingsGroup.Device"))
-        assertTrue(settings.contains("SettingsGroup.About"))
+        assertTrue(settings.contains("SettingsGroup.Account"))
+        assertTrue(settings.contains("SettingsGroup.Server"))
+        assertTrue(settings.contains("openProfiles()"))
+        assertTrue(settings.contains("PHONE_REPOSITORY_URL"))
+        assertTrue(settings.contains("STUDIO_REPOSITORY_URL"))
         listOf("SettingsGroup.Agent", "SettingsGroup.Memory", "SettingsGroup.Models", "openCronJobs()", "openChannels()")
             .forEach { duplicate -> assertFalse("Settings home duplicates $duplicate", settings.contains(duplicate)) }
     }
 
     @Test
-    fun moreSettingsOwnsTheRemainingStudioConfiguration() {
+    fun moreSettingsUsesTheSameGroupsAsIPhone() {
         val more = activity.substringAfter("private fun MoreSettingsScreen")
             .substringBefore("private fun SettingsGroupScreen")
         listOf(
-            "SettingsGroup.Server",
             "SettingsGroup.Users",
-            "SettingsGroup.Profile",
             "SettingsGroup.Agent",
+            "SettingsGroup.Memory",
             "SettingsGroup.Compression",
+            "SettingsGroup.Models",
             "SettingsGroup.Sessions",
             "SettingsGroup.Privacy",
             "SettingsGroup.Proxy",
             "SettingsGroup.Display",
         ).forEach { group -> assertTrue("More settings lost $group", more.contains(group)) }
-        listOf("SettingsGroup.Memory", "SettingsGroup.Models")
-            .forEach { duplicate -> assertFalse("More settings duplicates $duplicate", more.contains(duplicate)) }
+        listOf("SettingsGroup.Server", "SettingsGroup.Profile")
+            .forEach { duplicate -> assertFalse("Top-level setting leaked into More settings: $duplicate", more.contains(duplicate)) }
     }
 
     @Test
