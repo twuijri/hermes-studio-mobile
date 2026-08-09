@@ -102,6 +102,7 @@ internal fun CronJobsScreen(state: UiState, viewModel: AppViewModel) {
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -350,6 +351,7 @@ internal fun CronJobEditorScreen(state: UiState, viewModel: AppViewModel) {
                 onBack = { viewModel.back() },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -730,6 +732,7 @@ internal fun CronHistoryScreen(state: UiState, viewModel: AppViewModel) {
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),

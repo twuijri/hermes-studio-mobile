@@ -123,6 +123,7 @@ internal fun KanbanScreen(state: UiState, viewModel: AppViewModel) {
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
         floatingActionButton = {
             FloatingActionButton(onClick = { create = true }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.kanban_add))
@@ -377,6 +378,7 @@ internal fun KanbanTaskScreen(state: UiState, viewModel: AppViewModel) {
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),

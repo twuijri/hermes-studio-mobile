@@ -23,7 +23,6 @@ class IconSemanticsTest {
             "weixin", "wecom", "feishu", "dingtalk", "qqbot",
         )
         assertEquals(expected, CHANNELS.map { it.platform })
-        assertTrue("every known channel must declare an icon", CHANNELS.all { it.iconRes != null })
         assertEquals("icons must not accidentally share a drawable id", CHANNELS.size, CHANNELS.map { it.iconRes }.toSet().size)
 
         expected.forEach { platform ->
@@ -46,8 +45,8 @@ class IconSemanticsTest {
         val channel = activity.substringAfter("private fun ChannelScreen")
             .substringBefore("@Composable\ninternal fun SettingsSection")
 
-        assertTrue(channels.contains("painterResource(requireNotNull(spec.iconRes))"))
-        assertTrue(channel.contains("painterResource(iconRes)"))
+        assertTrue(channels.contains("painterResource(spec.iconRes)"))
+        assertTrue(channel.contains("painterResource(spec.iconRes)"))
         assertFalse(channels.contains("Icons.Filled.Hub"))
         assertFalse(channel.contains("Icons.Filled.Hub"))
     }

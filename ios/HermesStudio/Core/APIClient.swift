@@ -248,13 +248,32 @@ final class APIClient: @unchecked Sendable {
         let body: JSON = ["section": section, "values": values, "restart": restart]
         _ = try await object("/api/hermes/config?profile=\(profile.urlEncoded)", method: "PUT", body: body, profile: profile)
     }
-    func updateCredentials(profile: String, platform: String, values: [String: String]) async throws {
-        var direct: JSON = [:], extra: JSON = [:]
-        for (key, value) in values { if key.hasPrefix("extra.") { extra[String(key.dropFirst(6))] = value } else { direct[key] = value } }
-        if !extra.isEmpty { direct["extra"] = extra }
-        _ = try await object("/api/hermes/config/credentials?profile=\(profile.urlEncoded)", method: "PUT", body: ["platform": platform, "values": direct], profile: profile)
+    func updateCredentials(profile: String, platform: String, values: JSON) async throws {
+        _ = try await object("/api/hermes/config/credentials?profile=\(profile.urlEncoded)", method: "PUT", body: ["platform": platform, "values": values], profile: profile)
     }
     func clearCredentials(profile: String, platform: String) async throws { _ = try await object("/api/hermes/config/credentials/\(platform.urlEncoded)?profile=\(profile.urlEncoded)", method: "DELETE", profile: profile) }
+
+    func weixinQrCode(profile: String) async throws -> (id: String, url: URL) {
+        let result = try await object("/api/hermes/weixin/qrcode", profile: profile)
+        guard let id = result.string("qrcode").nilIfEmpty,
+              let url = URL(string: result.string("qrcode_url")) else {
+            throw HermesError.malformedResponse
+        }
+        return (id, url)
+    }
+
+    func weixinQrStatus(profile: String, code: String) async throws -> JSON {
+        try await object("/api/hermes/weixin/qrcode/status?qrcode=\(code.urlEncoded)", profile: profile)
+    }
+
+    func saveWeixinCredentials(profile: String, status: JSON) async throws {
+        let accountID = status.string("account_id")
+        let issuedToken = status.string("token")
+        guard !accountID.isEmpty, !issuedToken.isEmpty else { throw HermesError.malformedResponse }
+        var body: JSON = ["account_id": accountID, "token": issuedToken]
+        if let baseURL = status.string("base_url").nilIfEmpty { body["base_url"] = baseURL }
+        _ = try await object("/api/hermes/weixin/save", method: "POST", body: body, profile: profile)
+    }
 
     func changePassword(current: String, new: String) async throws { _ = try await object("/api/auth/change-password", method: "POST", body: ["currentPassword": current, "newPassword": new]) }
     func changeUsername(currentPassword: String, newUsername: String) async throws { _ = try await object("/api/auth/change-username", method: "POST", body: ["currentPassword": currentPassword, "newUsername": newUsername]) }

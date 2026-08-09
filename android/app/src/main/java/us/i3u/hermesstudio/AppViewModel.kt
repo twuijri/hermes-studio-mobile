@@ -8,6 +8,8 @@ import android.webkit.MimeTypeMap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -116,6 +118,7 @@ data class UiState(
     val serverConfig: ServerConfig? = null,
     /** The channel whose settings are open, if any. */
     val openChannel: String? = null,
+    val weixinQr: WeixinQrUi = WeixinQrUi(),
     val openGroup: SettingsGroup? = null,
     /** Parent hub for a settings group, channel list, or scheduled-jobs list. */
     val toolReturnScreen: Screen = Screen.Settings,
@@ -156,6 +159,12 @@ data class UiState(
     val notice: String? = null,
 )
 
+data class WeixinQrUi(
+    val status: String = "idle",
+    val id: String = "",
+    val url: String = "",
+)
+
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = Store(app)
@@ -170,6 +179,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var historyJob: kotlinx.coroutines.Job? = null
     private var roomJob: kotlinx.coroutines.Job? = null
     private var roomLoadJob: kotlinx.coroutines.Job? = null
+    private var weixinQrJob: Job? = null
     private var openingRoomId: String? = null
     private var activeRunSessionId: String? = null
     private val queuedDownloadNames = mutableSetOf<String>()
@@ -2274,7 +2284,73 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openChannel(platform: String) {
-        _state.update { it.copy(screen = Screen.Channel, openChannel = platform, error = null, notice = null) }
+        _state.update {
+            it.copy(
+                screen = Screen.Channel,
+                openChannel = platform,
+                weixinQr = if (platform == "weixin") it.weixinQr else WeixinQrUi(),
+                error = null,
+                notice = null,
+            )
+        }
+    }
+
+    /** Completes Weixin's Studio QR flow without leaving the native editor. */
+    fun startWeixinQr() {
+        val profile = _state.value.activeProfile.ifBlank { "default" }
+        weixinQrJob?.cancel()
+        _state.update { it.copy(weixinQr = WeixinQrUi(status = "loading"), error = null, notice = null) }
+        weixinQrJob = viewModelScope.launch {
+            val code = runCatching { withContext(Dispatchers.IO) { api.weixinQrCode(profile) } }
+                .getOrElse { failure ->
+                    _state.update {
+                        it.copy(weixinQr = WeixinQrUi(status = "error"), error = failure.readableMessage(localized))
+                    }
+                    return@launch
+                }
+            _state.update {
+                it.copy(weixinQr = WeixinQrUi(status = "waiting", id = code.id, url = code.url))
+            }
+
+            repeat(100) {
+                delay(3_000)
+                val poll = runCatching {
+                    withContext(Dispatchers.IO) { api.weixinQrStatus(profile, code.id) }
+                }.getOrNull() ?: return@repeat
+                when (poll.status) {
+                    "confirmed" -> {
+                        runCatching {
+                            withContext(Dispatchers.IO) { api.saveWeixinCredentials(profile, poll) }
+                        }.onSuccess {
+                            _state.update {
+                                it.copy(
+                                    weixinQr = WeixinQrUi(status = "confirmed", id = code.id),
+                                    notice = str(R.string.notice_weixin_linked),
+                                )
+                            }
+                            refreshServerConfig()
+                        }.onFailure { failure ->
+                            _state.update {
+                                it.copy(
+                                    weixinQr = WeixinQrUi(status = "error", id = code.id),
+                                    error = failure.readableMessage(localized),
+                                )
+                            }
+                        }
+                        return@launch
+                    }
+                    "expired" -> {
+                        _state.update { it.copy(weixinQr = WeixinQrUi(status = "expired", id = code.id)) }
+                        return@launch
+                    }
+                    "scaned", "scaned_but_redirect" -> _state.update {
+                        it.copy(weixinQr = it.weixinQr.copy(status = "scanned"))
+                    }
+                    else -> Unit
+                }
+            }
+            _state.update { it.copy(weixinQr = WeixinQrUi(status = "expired", id = code.id)) }
+        }
     }
 
     private fun refreshServerConfig() {
@@ -2294,14 +2370,60 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun saveChannel(platform: String, values: Map<String, String>, enabled: Boolean) {
         val profile = _state.value.activeProfile.ifBlank { "default" }
-        val label = channelSpec(platform).label
+        val spec = channelSpec(platform)
+        val label = spec.label
         _state.update { it.copy(savingSetting = true, error = null, notice = null) }
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val filled = values.filterValues { it.isNotBlank() }
-                    if (filled.isNotEmpty()) api.updateChannelCredentials(profile, platform, filled)
-                    api.setChannelEnabled(profile, platform, enabled)
+                    val credentials = linkedMapOf<String, Any?>()
+                    val configuration = org.json.JSONObject()
+
+                    fun putNested(target: org.json.JSONObject, path: String, value: Any?) {
+                        val parts = path.split('.')
+                        var current = target
+                        parts.dropLast(1).forEach { part ->
+                            current = current.optJSONObject(part)
+                                ?: org.json.JSONObject().also { current.put(part, it) }
+                        }
+                        current.put(parts.last(), value ?: org.json.JSONObject.NULL)
+                    }
+
+                    spec.fields.forEach { field ->
+                        val raw = values[field.path].orEmpty()
+                        val value: Any = when (field.kind) {
+                            ChannelFieldKind.Toggle -> raw.toBooleanStrictOrNull() ?: field.defaultEnabled
+                            ChannelFieldKind.CommaList -> org.json.JSONArray().apply {
+                                raw.split(',').map(String::trim).filter(String::isNotEmpty).forEach(::put)
+                            }
+                            ChannelFieldKind.Text, ChannelFieldKind.Secret -> raw.trim()
+                        }
+                        if (field.target == ChannelFieldTarget.Credentials) credentials[field.path] = value
+                        else putNested(configuration, field.path, value)
+                    }
+
+                    // WhatsApp owns its enablement through WHATSAPP_ENABLED.
+                    // Other adapters retain the convenient app-level switch.
+                    if (spec.fields.none {
+                            it.target == ChannelFieldTarget.Credentials && it.path == "enabled"
+                        }
+                    ) {
+                        configuration.put("enabled", enabled)
+                    }
+
+                    if (configuration.length() > 0) {
+                        api.updateConfigSection(
+                            profile,
+                            platform,
+                            configuration,
+                            restart = credentials.isEmpty(),
+                        )
+                    }
+                    if (credentials.isNotEmpty()) {
+                        // Empty strings are intentional: Studio uses them to clear
+                        // one incorrect value without deleting every credential.
+                        api.updateChannelCredentials(profile, platform, credentials)
+                    }
                 }
             }.onSuccess {
                 _state.update {

@@ -19,9 +19,9 @@ struct SettingsView: View {
                 NavigationLink { MoreSettingsView() } label: { SettingsRow(icon: "slider.horizontal.3", color: .orange, title: "More Settings", subtitle: String(localized: "All Hermes Studio settings in one place")) }
             } footer: { Text("Agent tools stay in the Agent tab. Studio configuration is collected here to keep navigation simple.") }
             Section("About") {
-                HStack { SettingsRow(icon: "app.badge.fill", color: HermesTheme.purple, title: "Hermes Studio Phone") { Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0").foregroundStyle(.secondary) } }
-                Link(destination: URL(string: "https://github.com/twuijri/hermes-studio-mobile")!) { SettingsRow(icon: "iphone", color: HermesTheme.purple, title: "Hermes Studio Phone on GitHub") { Image(systemName: "arrow.up.right").foregroundStyle(.secondary) } }.foregroundStyle(.primary)
-                Link(destination: URL(string: "https://github.com/EKKOLearnAI/hermes-studio")!) { SettingsRow(icon: "chevron.left.forwardslash.chevron.right", color: .black, title: "Hermes Studio on GitHub") { Image(systemName: "arrow.up.right").foregroundStyle(.secondary) } }.foregroundStyle(.primary)
+                HStack { SettingsRow(icon: "app.badge.fill", color: HermesTheme.purple, title: "Hermes Studio Mobile") { Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0").foregroundStyle(.secondary) } }
+                Link(destination: URL(string: "https://github.com/twuijri/hermes-studio-mobile")!) { RepositorySettingsRow(title: "Hermes Studio Mobile") }.foregroundStyle(.primary)
+                Link(destination: URL(string: "https://github.com/EKKOLearnAI/hermes-studio")!) { RepositorySettingsRow(title: "Hermes Studio") }.foregroundStyle(.primary)
             }
             Section { Button(role: .destructive) { store.signOut() } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right").frame(maxWidth: .infinity) } }
         }
@@ -30,6 +30,28 @@ struct SettingsView: View {
         // Rebuild this visible list together with the three root lists after
         // UIKit's direction transform has settled (see AppStore.setLanguage).
         .id("\(store.language)-\(store.languageRefresh)")
+    }
+}
+
+private struct RepositorySettingsRow: View {
+    let title: LocalizedStringKey
+
+    var body: some View {
+        HStack(spacing: 13) {
+            Image("GitHubMark")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundStyle(.white)
+                .padding(6)
+                .frame(width: 31, height: 31)
+                .background(Color.black.gradient, in: RoundedRectangle(cornerRadius: 8))
+            Text(title).font(.body.weight(.medium)).lineLimit(1)
+            Spacer(minLength: 8)
+            Image(systemName: "arrow.up.right").foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 4)
     }
 }
 

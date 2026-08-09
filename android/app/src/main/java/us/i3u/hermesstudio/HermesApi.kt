@@ -265,12 +265,17 @@ class HermesApi(
             credentials?.keys()?.forEach { names.add(it) }
             names.forEach { platform ->
                 val settings = platforms?.optJSONObject(platform)
+                val stored = settings?.let(::flattenChannelSettings).orEmpty()
+                val explicitlyConfigured = credentials
+                    ?.takeIf { it.has(platform) }
+                    ?.optBoolean(platform, false)
                 add(
                     ChannelStatus(
                         platform = platform,
                         // Hermes runs a channel unless it is explicitly turned off.
                         enabled = settings?.optBoolean("enabled", true) ?: true,
-                        configured = credentials?.optBoolean(platform, false) ?: false,
+                        configured = explicitlyConfigured ?: inferChannelConfigured(platform, stored),
+                        values = stored,
                     ),
                 )
             }
@@ -283,19 +288,51 @@ class HermesApi(
         )
     }
 
+    /** Preserve every Studio channel value, including nested extras and lists. */
+    private fun flattenChannelSettings(root: JSONObject): Map<String, String> {
+        val values = linkedMapOf<String, String>()
+        fun visit(value: Any?, path: String) {
+            when (value) {
+                is JSONObject -> value.keys().forEach { key ->
+                    visit(value.opt(key), if (path.isEmpty()) key else "$path.$key")
+                }
+                is JSONArray -> values[path] = (0 until value.length())
+                    .mapNotNull { index -> value.opt(index)?.takeUnless { it == JSONObject.NULL }?.toString() }
+                    .joinToString(", ")
+                null, JSONObject.NULL -> Unit
+                else -> values[path] = value.toString()
+            }
+        }
+        visit(root, "")
+        return values
+    }
+
+    private fun inferChannelConfigured(platform: String, values: Map<String, String>): Boolean = when (platform) {
+        "matrix" -> values["extra.homeserver"].orEmpty().isNotBlank() &&
+            (values["token"].orEmpty().isNotBlank() ||
+                (values["extra.user_id"].orEmpty().isNotBlank() && values["extra.password"].orEmpty().isNotBlank()))
+        "whatsapp" -> values["enabled"].toBoolean()
+        else -> channelSpec(platform).fields
+            .asSequence()
+            .filter { it.target == ChannelFieldTarget.Credentials && it.kind != ChannelFieldKind.Toggle }
+            .any { values[it.path].orEmpty().isNotBlank() }
+    }
+
     /**
      * PUT /api/hermes/config/credentials — writes a channel's secrets into the
      * profile's env file. The server restarts the gateway itself afterwards,
      * which is what actually puts the channel online.
      */
-    fun updateChannelCredentials(profile: String, platform: String, values: Map<String, String>) {
+    fun updateChannelCredentials(profile: String, platform: String, values: Map<String, Any?>) {
         val payload = JSONObject()
-        val extra = JSONObject()
         values.forEach { (path, value) ->
-            if (path.startsWith("extra.")) extra.put(path.removePrefix("extra."), value)
-            else payload.put(path, value)
+            val parts = path.split('.')
+            var target = payload
+            parts.dropLast(1).forEach { part ->
+                target = target.optJSONObject(part) ?: JSONObject().also { target.put(part, it) }
+            }
+            target.put(parts.last(), value ?: JSONObject.NULL)
         }
-        if (extra.length() > 0) payload.put("extra", extra)
         val body = JSONObject().put("platform", platform).put("values", payload)
         call("/api/hermes/config/credentials?profile=${enc(profile)}", "PUT", body)
     }
@@ -303,6 +340,37 @@ class HermesApi(
     /** DELETE /api/hermes/config/credentials/{platform} */
     fun clearChannelCredentials(profile: String, platform: String) {
         call("/api/hermes/config/credentials/${enc(platform)}?profile=${enc(profile)}", "DELETE")
+    }
+
+    /** Starts Studio's native Weixin iLink login flow. */
+    fun weixinQrCode(profile: String): WeixinQrCode {
+        val result = call("/api/hermes/weixin/qrcode", profile = profile)
+        return WeixinQrCode(
+            id = result.optString("qrcode"),
+            url = result.optString("qrcode_url"),
+        ).takeIf { it.id.isNotBlank() && it.url.isNotBlank() }
+            ?: throw HermesException("Studio returned an invalid Weixin QR code")
+    }
+
+    fun weixinQrStatus(profile: String, qrCode: String): WeixinQrPoll {
+        val result = call(
+            "/api/hermes/weixin/qrcode/status?qrcode=${enc(qrCode)}",
+            profile = profile,
+        )
+        return WeixinQrPoll(
+            status = result.optString("status", "wait"),
+            accountId = result.optString("account_id").takeIf(String::isNotBlank),
+            token = result.optString("token").takeIf(String::isNotBlank),
+            baseUrl = result.optString("base_url").takeIf(String::isNotBlank),
+        )
+    }
+
+    fun saveWeixinCredentials(profile: String, poll: WeixinQrPoll) {
+        val accountId = poll.accountId ?: throw HermesException("Weixin account ID was missing")
+        val issuedToken = poll.token ?: throw HermesException("Weixin token was missing")
+        val body = JSONObject().put("account_id", accountId).put("token", issuedToken)
+        poll.baseUrl?.let { body.put("base_url", it) }
+        call("/api/hermes/weixin/save", "POST", body, profile)
     }
 
     /** Turns a channel on or off without touching its credentials. */
@@ -1621,6 +1689,16 @@ data class ChannelStatus(
     val platform: String,
     val enabled: Boolean,
     val configured: Boolean,
+    val values: Map<String, String>,
+)
+
+data class WeixinQrCode(val id: String, val url: String)
+
+data class WeixinQrPoll(
+    val status: String,
+    val accountId: String?,
+    val token: String?,
+    val baseUrl: String?,
 )
 
 data class ServerConfig(

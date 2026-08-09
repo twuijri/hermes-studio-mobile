@@ -93,6 +93,8 @@ import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewKanban
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -120,6 +122,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
@@ -153,6 +156,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
@@ -729,6 +733,7 @@ private fun RoomScreen(state: UiState, viewModel: AppViewModel) {
                 onBack = { viewModel.back() },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
             if (state.loadingHistory) LoadingRow()
@@ -888,6 +893,7 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -1356,6 +1362,7 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -2272,6 +2279,7 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -2396,8 +2404,8 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
                     )
                     StudioCardDivider()
                     StudioDestinationRow(
-                        icon = Icons.Filled.PhoneAndroid,
-                        color = Color(0xFF7A5CFF),
+                        icon = painterResource(R.drawable.ic_github),
+                        color = MaterialTheme.colorScheme.onSurface,
                         title = stringResource(R.string.settings_phone_github),
                         onClick = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PHONE_REPOSITORY_URL)))
@@ -2406,8 +2414,8 @@ private fun SettingsScreen(state: UiState, viewModel: AppViewModel) {
                     )
                     StudioCardDivider()
                     StudioDestinationRow(
-                        icon = Icons.Filled.Info,
-                        color = Color(0xFF8E8E93),
+                        icon = painterResource(R.drawable.ic_github),
+                        color = MaterialTheme.colorScheme.onSurface,
                         title = stringResource(R.string.settings_studio_github),
                         onClick = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(STUDIO_REPOSITORY_URL)))
@@ -2447,6 +2455,7 @@ private fun MoreSettingsScreen(state: UiState, viewModel: AppViewModel) {
                 onBack = { viewModel.back() },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -2534,6 +2543,7 @@ private fun SettingsGroupScreen(state: UiState, viewModel: AppViewModel) {
 
     Scaffold(
         topBar = { StudioTopBar(title = title, onBack = { viewModel.back() }) },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -2959,27 +2969,73 @@ private fun ChannelsScreen(state: UiState, viewModel: AppViewModel) {
                 onBack = { viewModel.back() },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = StudioHorizontalPadding)
+                .verticalScroll(rememberScrollState()),
         ) {
             if (state.savingSetting) LoadingRow()
             state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
             state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
 
-            listed.forEach { (spec, status) ->
-                SettingsRow(
-                    icon = painterResource(requireNotNull(spec.iconRes)),
-                    label = spec.label,
-                    value = stringResource(
-                        when {
-                            status?.configured == true && status.enabled -> R.string.channel_configured
-                            status?.configured == true -> R.string.channel_off
-                            else -> R.string.channel_missing
-                        },
-                    ),
-                    onClick = { viewModel.openChannel(spec.platform) },
-                )
+            StudioGroupedCard {
+                listed.forEachIndexed { index, (spec, status) ->
+                    val connected = status?.configured == true && status.enabled
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.openChannel(spec.platform) }
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                        ) {
+                            Icon(
+                                painter = painterResource(spec.iconRes),
+                                contentDescription = null,
+                                tint = Color.Unspecified,
+                                modifier = Modifier.padding(10.dp).size(28.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(spec.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                stringResource(
+                                    when {
+                                        connected -> R.string.channel_connected
+                                        status?.configured == true -> R.string.channel_off
+                                        else -> R.string.channel_missing
+                                    },
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(11.dp)
+                                .clip(RoundedCornerShape(99.dp))
+                                .background(
+                                    if (connected) Color(0xFF30D158)
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                ),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (index != listed.lastIndex) StudioCardDivider(startIndent = 76)
+                }
             }
 
             Text(
@@ -2997,11 +3053,31 @@ private fun ChannelsScreen(state: UiState, viewModel: AppViewModel) {
 @Composable
 private fun ChannelScreen(state: UiState, viewModel: AppViewModel) {
     val platform = state.openChannel ?: return
+    val context = LocalContext.current
     val spec = channelSpec(platform)
     val status = state.serverConfig?.channels.orEmpty().firstOrNull { it.platform == platform }
-    val values = remember(platform) { mutableStateMapOf<String, String>() }
-    var enabled by remember(platform) { mutableStateOf(status?.enabled ?: true) }
+    val values = remember(platform, status?.values) {
+        mutableStateMapOf<String, String>().apply {
+            putAll(status?.values.orEmpty())
+            spec.fields.filter { it.kind == ChannelFieldKind.Toggle }.forEach { field ->
+                putIfAbsent(field.path, field.defaultEnabled.toString())
+            }
+        }
+    }
+    val revealed = remember(platform) { mutableStateMapOf<String, Boolean>() }
+    var enabled by remember(platform, status?.enabled) { mutableStateOf(status?.enabled ?: true) }
     var confirmClear by remember(platform) { mutableStateOf(false) }
+    var openedQrId by remember(platform) { mutableStateOf("") }
+
+    LaunchedEffect(state.weixinQr.id, state.weixinQr.url) {
+        val qr = state.weixinQr
+        if (platform == "weixin" && qr.id.isNotBlank() && qr.url.isNotBlank() && openedQrId != qr.id) {
+            openedQrId = qr.id
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(qr.url)))
+            }.onFailure { viewModel.showToolError(it) }
+        }
+    }
 
     if (confirmClear) {
         ConfirmDialog(
@@ -3018,21 +3094,24 @@ private fun ChannelScreen(state: UiState, viewModel: AppViewModel) {
             StudioTopBar(
                 title = spec.label,
                 subtitle = stringResource(
-                    if (status?.configured == true) R.string.channel_configured else R.string.channel_missing,
+                    when {
+                        status?.configured == true && status.enabled -> R.string.channel_connected
+                        status?.configured == true -> R.string.channel_off
+                        else -> R.string.channel_missing
+                    },
                 ),
                 onBack = { viewModel.back() },
-                leading = spec.iconRes?.let { iconRes ->
-                    {
-                        Icon(
-                            painter = painterResource(iconRes),
-                            contentDescription = null,
-                            modifier = Modifier.size(26.dp),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
+                leading = {
+                    Icon(
+                        painter = painterResource(spec.iconRes),
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = Color.Unspecified,
+                    )
                 },
             )
         },
+        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -3045,59 +3124,113 @@ private fun ChannelScreen(state: UiState, viewModel: AppViewModel) {
             state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
             state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
 
-            val enabledLabel = stringResource(R.string.channel_enabled)
-            val enabledNote = stringResource(R.string.channel_enabled_note)
-            val enabledSwitch: @Composable () -> Unit = {
-                Switch(checked = enabled, onCheckedChange = { enabled = it })
+            if (spec.exclusive) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFFF9500).copy(alpha = 0.14f),
+                ) {
+                    Text(
+                        stringResource(R.string.channel_exclusive_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFFFB340),
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
             }
-            if (spec.iconRes != null) {
+
+            if (platform == "weixin") {
+                val qrStatus = when (state.weixinQr.status) {
+                    "loading" -> R.string.channel_qr_loading
+                    "waiting" -> R.string.channel_qr_waiting
+                    "scanned" -> R.string.channel_qr_scanned
+                    "confirmed" -> R.string.channel_qr_confirmed
+                    "expired" -> R.string.channel_qr_expired
+                    "error" -> R.string.channel_qr_error
+                    else -> R.string.channel_qr_ready
+                }
+                SettingsRow(
+                    icon = Icons.Filled.Cable,
+                    label = stringResource(R.string.channel_qr_link),
+                    value = stringResource(qrStatus),
+                    onClick = viewModel::startWeixinQr,
+                    trailing = if (state.weixinQr.status == "loading" || state.weixinQr.status == "waiting" || state.weixinQr.status == "scanned") {
+                        { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
+                    } else null,
+                )
+            }
+
+            if (spec.fields.none {
+                    it.target == ChannelFieldTarget.Credentials && it.path == "enabled"
+                }
+            ) {
                 SettingsRow(
                     icon = painterResource(spec.iconRes),
-                    label = enabledLabel,
-                    value = enabledNote,
-                    trailing = enabledSwitch,
-                )
-            } else {
-                SettingsRow(
-                    icon = Icons.Filled.Forum,
-                    label = enabledLabel,
-                    value = enabledNote,
-                    trailing = enabledSwitch,
+                    label = stringResource(R.string.channel_enabled),
+                    value = stringResource(R.string.channel_enabled_note),
+                    trailing = {
+                        Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    },
                 )
             }
 
-            if (spec.pairedElsewhere) {
-                Text(
-                    stringResource(R.string.channel_paired_elsewhere),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(20.dp),
-                )
-            }
-
-            spec.fields.forEach { field ->
-                OutlinedTextField(
-                    value = values[field.path].orEmpty(),
-                    onValueChange = { values[field.path] = it },
-                    label = { Text(field.label) },
-                    placeholder = {
-                        Text(
-                            if (status?.configured == true && field.secret) {
-                                stringResource(R.string.channel_secret_set)
-                            } else {
-                                field.hint
+            @Composable
+            fun section(target: ChannelFieldTarget, title: Int) {
+                val fields = spec.fields.filter { it.target == target }
+                if (fields.isEmpty()) return
+                SettingsSection(stringResource(title))
+                fields.forEach { field ->
+                    val label = stringResource(field.labelRes)
+                    val hint = field.hintRes?.let { stringResource(it) }.orEmpty()
+                    when (field.kind) {
+                        ChannelFieldKind.Toggle -> SettingsRow(
+                            icon = if (target == ChannelFieldTarget.Credentials) Icons.Filled.VpnLock else Icons.Filled.Tune,
+                            label = label,
+                            value = hint,
+                            trailing = {
+                                Switch(
+                                    checked = values[field.path].toBoolean(),
+                                    onCheckedChange = { values[field.path] = it.toString() },
+                                )
                             },
                         )
-                    },
-                    singleLine = true,
-                    visualTransformation = if (field.secret) {
-                        PasswordVisualTransformation()
-                    } else {
-                        androidx.compose.ui.text.input.VisualTransformation.None
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
-                )
+                        ChannelFieldKind.Text,
+                        ChannelFieldKind.Secret,
+                        ChannelFieldKind.CommaList,
+                        -> {
+                            val secret = field.kind == ChannelFieldKind.Secret
+                            val visible = revealed[field.path] == true
+                            OutlinedTextField(
+                                value = values[field.path].orEmpty(),
+                                onValueChange = { values[field.path] = it },
+                                label = { Text(label) },
+                                supportingText = hint.takeIf(String::isNotBlank)?.let { { Text(it) } },
+                                placeholder = field.placeholder.takeIf(String::isNotBlank)?.let { placeholder ->
+                                    { Text(placeholder) }
+                                },
+                                trailingIcon = if (secret) {
+                                    {
+                                        IconButton(onClick = { revealed[field.path] = !visible }) {
+                                            Icon(
+                                                if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                                contentDescription = stringResource(
+                                                    if (visible) R.string.channel_hide_secret else R.string.channel_show_secret,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                } else null,
+                                singleLine = true,
+                                visualTransformation = if (secret && !visible) PasswordVisualTransformation() else VisualTransformation.None,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
             }
+
+            section(ChannelFieldTarget.Credentials, R.string.channel_credentials_section)
+            section(ChannelFieldTarget.Configuration, R.string.channel_behavior_section)
 
             Button(
                 onClick = { viewModel.saveChannel(platform, values.toMap(), enabled) },
@@ -3107,7 +3240,7 @@ private fun ChannelScreen(state: UiState, viewModel: AppViewModel) {
                 Text(stringResource(R.string.channel_save))
             }
 
-            if (status?.configured == true) {
+            if (status?.configured == true && spec.supportsCredentialClear) {
                 SettingsRow(
                     icon = Icons.Filled.Delete,
                     label = stringResource(R.string.channel_clear),
@@ -3307,7 +3440,7 @@ internal fun StudioTopBar(
 }
 
 @Composable
-private fun StudioTabs(state: UiState, viewModel: AppViewModel) {
+internal fun StudioTabs(state: UiState, viewModel: AppViewModel) {
     val colors = NavigationBarItemDefaults.colors(
         selectedIconColor = MaterialTheme.colorScheme.primary,
         selectedTextColor = MaterialTheme.colorScheme.primary,
