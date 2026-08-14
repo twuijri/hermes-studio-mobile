@@ -151,6 +151,7 @@ private struct MessageBubble: View {
     let sessionProfile: String
     @State private var reasoningExpanded = true
     var body: some View {
+        let parsed = ChatFiles.parse(line.text)
         HStack(alignment: .bottom, spacing: 8) {
             if line.fromUser { Spacer(minLength: 45) } else { ProfileAvatar(name: sessionProfile, avatar: profile?.avatar, size: 30) }
             VStack(alignment: .leading, spacing: 9) {
@@ -164,8 +165,8 @@ private struct MessageBubble: View {
                         HStack { Image(systemName: line.isStreaming ? "brain.filled.head.profile" : "brain.head.profile"); Text(line.isStreaming ? "Thinking" : "Thinking details").fontWeight(.semibold); if line.isStreaming { ProgressView().controlSize(.mini) } }
                     }.font(.subheadline)
                 }
-                if !line.text.isEmpty { MarkdownText(text: line.text).font(.body).foregroundStyle(line.isError ? .red : .primary) }
-                ForEach(ChatFiles.links(in: line.text)) { link in FileDownloadCard(link: link, url: api.downloadURL(path: link.path, name: ChatFiles.fileName(for: link), profile: sessionProfile)) }
+                if !parsed.text.isEmpty { MarkdownText(text: parsed.text).font(.body).foregroundStyle(line.isError ? .red : .primary) }
+                ForEach(parsed.files) { link in FileDownloadCard(link: link, url: api.downloadURL(path: link.path, name: ChatFiles.fileName(for: link), profile: sessionProfile)) }
                 HStack(spacing: 5) { if line.isStreaming { ProgressView().controlSize(.mini) }; Text(line.timestamp.chatTime) }.font(.caption2).foregroundStyle(.secondary)
             }
             // Assistant replies need a real proposed width so an RTL paragraph

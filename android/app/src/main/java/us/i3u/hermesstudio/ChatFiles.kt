@@ -1,5 +1,6 @@
 package us.i3u.hermesstudio
 
+import org.json.JSONArray
 import java.net.URLDecoder
 
 /** A local Studio file linked from an assistant Markdown message. */
@@ -27,7 +28,9 @@ private val CONVENTIONAL_EXTENSION = Regex("""\.[A-Za-z0-9]{1,12}$""")
  * download cards. Ordinary web links and Markdown images stay in the message.
  */
 fun parseChatMessage(content: String): ParsedChatMessage {
-    val accepted = MARKDOWN_LINK.findAll(content).mapNotNull { match ->
+    val contentBlocks = parseStudioContentBlocks(content)
+    val visibleContent = contentBlocks?.text ?: content
+    val accepted = MARKDOWN_LINK.findAll(visibleContent).mapNotNull { match ->
         val rawTarget = match.groups[2]?.value ?: match.groups[3]?.value ?: return@mapNotNull null
         val path = unwrapStudioDownloadPath(rawTarget.trim())
         if (!isStudioLocalFile(path)) return@mapNotNull null
@@ -39,21 +42,62 @@ fun parseChatMessage(content: String): ParsedChatMessage {
         )
     }.toList()
 
-    if (accepted.isEmpty()) return ParsedChatMessage(content, emptyList())
+    if (accepted.isEmpty() && contentBlocks == null) return ParsedChatMessage(content, emptyList())
 
     val body = buildString {
         var cursor = 0
         accepted.forEach { (match, _) ->
-            append(content, cursor, match.range.first)
+            append(visibleContent, cursor, match.range.first)
             cursor = match.range.last + 1
         }
-        append(content, cursor, content.length)
+        append(visibleContent, cursor, visibleContent.length)
     }
         .replace(FILES_HEADING, "")
         .replace(Regex("""\n[ \t]*\n(?:[ \t]*\n)+"""), "\n\n")
         .trim()
 
-    return ParsedChatMessage(body, accepted.map { it.second })
+    val files = (contentBlocks?.files.orEmpty() + accepted.map { it.second })
+        .distinctBy { it.path }
+    return ParsedChatMessage(body, files)
+}
+
+/**
+ * Studio stores a message carrying uploads as a JSON string of content blocks.
+ * The web client turns those blocks back into attachment cards; doing the same
+ * here prevents an audio note or document from appearing as raw JSON after a
+ * history refresh.
+ */
+private fun parseStudioContentBlocks(content: String): ParsedChatMessage? {
+    val trimmed = content.trim()
+    if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return null
+    val array = runCatching { JSONArray(trimmed) }.getOrNull() ?: return null
+    val text = mutableListOf<String>()
+    val files = mutableListOf<ChatFileLink>()
+    var recognized = false
+
+    for (index in 0 until array.length()) {
+        val block = array.optJSONObject(index) ?: continue
+        when (block.optString("type")) {
+            "text" -> {
+                recognized = true
+                block.optString("text").trim().takeIf(String::isNotEmpty)?.let(text::add)
+            }
+
+            "file", "image" -> {
+                recognized = true
+                val path = block.optString("path").trim()
+                if (path.isBlank() || !isStudioLocalFile(path)) continue
+                val name = block.optString("name").trim().ifBlank { inferDownloadFileName(path) }
+                files += ChatFileLink(
+                    label = name,
+                    path = path,
+                    fileName = inferDownloadFileName(path, name),
+                )
+            }
+        }
+    }
+
+    return if (recognized) ParsedChatMessage(text.joinToString("\n\n"), files.distinctBy { it.path }) else null
 }
 
 fun inferDownloadFileName(path: String, label: String? = null): String {

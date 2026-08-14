@@ -16,11 +16,36 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(ChatFiles.fileName(for: links[0]), "deck.pptx")
     }
 
+    func testStudioAudioContentBlockRendersAsAttachment() throws {
+        let parsed = ChatFiles.parse(#"[{"type":"file","name":"voice-1786646557278.m4a","path":"/home/agent/.hermes-web-ui/upload/manager/bbdd9dabb00e962d.m4a","media_type":"audio/mp4"}]"#)
+
+        XCTAssertTrue(parsed.text.isEmpty)
+        XCTAssertEqual(parsed.files.count, 1)
+        XCTAssertEqual(parsed.files.first?.label, "voice-1786646557278.m4a")
+        XCTAssertEqual(parsed.files.first?.path, "/home/agent/.hermes-web-ui/upload/manager/bbdd9dabb00e962d.m4a")
+    }
+
     func testParsesSocketEvent() {
         let packet = #"42/chat-run,["message.delta",{"delta":"hello"}]"#
         let event = ChatSocket.event(packet, namespace: "/chat-run")
         XCTAssertEqual(event?.0, "message.delta")
         XCTAssertEqual(event?.1.string("delta"), "hello")
+    }
+
+    func testResumeRecoversAnswerCompletedDuringDisconnect() {
+        let payload: JSON = [
+            "isWorking": false,
+            "messages": [
+                ["role": "assistant", "content": "old answer"],
+                ["role": "user", "content": "voice attachment"],
+                ["role": "assistant", "content": "transcription completed", "reasoning": "audio processed"],
+            ],
+        ]
+
+        let completion = ChatSocket.completion(fromResume: payload)
+
+        XCTAssertEqual(completion?.output, "transcription completed")
+        XCTAssertEqual(completion?.reasoning, "audio processed")
     }
 
     func testDownloadURLCarriesProfileAndToken() throws {

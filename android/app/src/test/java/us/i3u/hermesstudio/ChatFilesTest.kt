@@ -55,4 +55,27 @@ class ChatFilesTest {
             inferDownloadFileName("/workspace/generated-output.bin", "final-ar.pptx"),
         )
     }
+
+    @Test
+    fun `studio audio content blocks become an attachment instead of raw json`() {
+        val parsed = parseChatMessage(
+            """[{"type":"file","name":"voice-1786646557278.m4a","path":"/home/agent/.hermes-web-ui/upload/manager/bbdd9dabb00e962d.m4a","media_type":"audio/mp4"}]""",
+        )
+
+        assertEquals("", parsed.text)
+        assertEquals(1, parsed.files.size)
+        assertEquals("voice-1786646557278.m4a", parsed.files.single().label)
+        assertEquals("voice-1786646557278.m4a", parsed.files.single().fileName)
+        assertFalse(parsed.text.contains("media_type"))
+    }
+
+    @Test
+    fun `studio content blocks preserve text and merge their files`() {
+        val parsed = parseChatMessage(
+            """[{"type":"text","text":"حلل هذا التسجيل"},{"type":"file","name":"meeting.m4a","path":"/upload/meeting.m4a","media_type":"audio/mp4"}]""",
+        )
+
+        assertEquals("حلل هذا التسجيل", parsed.text)
+        assertEquals("meeting.m4a", parsed.files.single().fileName)
+    }
 }

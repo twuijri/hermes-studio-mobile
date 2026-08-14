@@ -2,6 +2,7 @@ package us.i3u.hermesstudio
 
 import io.socket.client.IO
 import io.socket.client.Socket
+import io.socket.engineio.client.transports.Polling
 import io.socket.engineio.client.transports.WebSocket
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -76,8 +77,11 @@ class ChatSocket(
 
         val options = IO.Options.builder()
             .setForceNew(true)
-            .setReconnection(false)
-            .setTransports(arrayOf(WebSocket.NAME))
+            .setReconnection(true)
+            .setReconnectionAttempts(Int.MAX_VALUE)
+            .setReconnectionDelay(1_000)
+            .setReconnectionDelayMax(30_000)
+            .setTransports(arrayOf(WebSocket.NAME, Polling.NAME))
             .setAuth(mapOf("token" to token))
             .setQuery("profile=" + URLEncoder.encode(profile, "UTF-8"))
             .setTimeout(30_000)
@@ -87,10 +91,39 @@ class ChatSocket(
         socket = live
         var runStarted = false
         var terminal = false
+        var submitted = false
 
         fun eventPayload(args: Array<out Any?>): JSONObject? = args.firstOrNull() as? JSONObject
 
-        live.on(Socket.EVENT_CONNECT) { live.emit("run", payload) }
+        live.on(Socket.EVENT_CONNECT) {
+            if (!submitted) {
+                submitted = true
+                live.emit("run", payload)
+            } else {
+                // A mobile network can change while an agent is working. Join
+                // the existing session again instead of submitting the turn a
+                // second time or showing a false "disconnected" reply.
+                live.emit(
+                    "resume",
+                    JSONObject().put("session_id", sessionId).put("profile", profile),
+                )
+            }
+        }
+        live.on("resumed") { args ->
+            val event = eventPayload(args) ?: return@on
+            if (event.optBoolean("isWorking", false)) {
+                runStarted = true
+                return@on
+            }
+            terminal = true
+            val completion = completionFromResume(event)
+            if (completion != null) {
+                trySend(completion)
+            } else {
+                trySend(RunEvent.Failed("run finished without output", retryableTransport = false))
+            }
+            close()
+        }
         live.on("run.started") {
             runStarted = true
             trySend(RunEvent.Started(System.currentTimeMillis()))
@@ -167,16 +200,25 @@ class ChatSocket(
             close()
         }
         live.on(Socket.EVENT_CONNECT_ERROR) { args ->
-            terminal = true
-            val detail = args.firstOrNull()?.toString().orEmpty()
-            trySend(RunEvent.Failed(detail.ifBlank { "connect_error" }, retryableTransport = true))
-            close()
-        }
-        live.on(Socket.EVENT_DISCONNECT) {
-            if (!terminal) {
-                trySend(RunEvent.Failed("disconnected", retryableTransport = !runStarted))
+            // Before the first successful connection REST is the safe fallback.
+            // Afterwards Socket.IO owns reconnection and resume; surfacing every
+            // temporary radio/network loss as an assistant message is wrong.
+            if (!submitted) {
+                terminal = true
+                val detail = args.firstOrNull()?.toString().orEmpty()
+                trySend(RunEvent.Failed(detail.ifBlank { "connect_error" }, retryableTransport = true))
+                close()
             }
-            close()
+        }
+        live.on(Socket.EVENT_DISCONNECT) { args ->
+            if (!terminal && !submitted) {
+                trySend(RunEvent.Failed("disconnected", retryableTransport = !runStarted))
+                close()
+            } else if (!terminal && args.firstOrNull()?.toString() == "io server disconnect") {
+                // Server-requested disconnects are not retried automatically by
+                // Socket.IO, while transport and network disconnects are.
+                live.connect()
+            }
         }
 
         live.connect()
@@ -206,6 +248,31 @@ class ChatSocket(
                 }
             }
         }
+}
+
+/** Returns the answer persisted while this phone was temporarily offline. */
+internal fun completionFromResume(payload: JSONObject): RunEvent.Done? {
+    if (payload.optBoolean("isWorking", false)) return null
+    val messages = payload.optJSONArray("messages") ?: return null
+    var lastUserIndex = -1
+    for (index in 0 until messages.length()) {
+        val role = messages.optJSONObject(index)?.optString("role").orEmpty()
+        if (role == "user" || role == "command") lastUserIndex = index
+    }
+    if (lastUserIndex < 0) return null
+
+    for (index in messages.length() - 1 downTo lastUserIndex + 1) {
+        val message = messages.optJSONObject(index) ?: continue
+        if (message.optString("role") != "assistant") continue
+        val output = message.optString("display_content")
+            .ifBlank { message.optString("content") }
+        if (output.isBlank()) continue
+        return RunEvent.Done(
+            output = output,
+            reasoning = message.optString("reasoning"),
+        )
+    }
+    return null
 }
 
 /** Normalizes tool payloads emitted by both current and older Studio bridges. */

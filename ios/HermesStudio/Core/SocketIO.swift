@@ -17,6 +17,10 @@ enum LiveRoomEvent {
     case failed(String)
 }
 
+private final class ChatReconnectTask: @unchecked Sendable {
+    var value: Task<Void, Never>?
+}
+
 final class SocketIOConnection: @unchecked Sendable {
     private let baseURL: String
     private let token: String
@@ -106,12 +110,65 @@ final class ChatSocket: @unchecked Sendable {
             let live = SocketIOConnection(baseURL: baseURL, token: token, namespace: "/chat-run", profile: profile)
             self.connection = live
             var started = false
-            live.connect { [weak self] packet in
-                if packet == "__connected__" { live.emit("run", payload: payload); return }
-                if packet == "__disconnected__" { if !started { continuation.yield(.failed(String(localized: "Connection dropped"), retryable: true)) }; continuation.finish(); return }
-                if packet.hasPrefix("__error__:") { continuation.yield(.failed(String(packet.dropFirst(10)), retryable: !started)); continuation.finish(); return }
+            var submitted = false
+            var terminal = false
+            var reconnectAttempt = 0
+            let retryTask = ChatReconnectTask()
+            var handlePacket: ((String) -> Void)!
+
+            func scheduleReconnect() {
+                guard !terminal, submitted, retryTask.value == nil else { return }
+                let delay = min(pow(2.0, Double(reconnectAttempt)), 30.0)
+                reconnectAttempt += 1
+                retryTask.value = Task {
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled, !terminal else { return }
+                    retryTask.value = nil
+                    live.connect(onPacket: handlePacket)
+                }
+            }
+
+            func finish() {
+                guard !terminal else { return }
+                terminal = true
+                retryTask.value?.cancel()
+                continuation.finish()
+                live.close()
+            }
+
+            handlePacket = { packet in
+                if packet == "__connected__" {
+                    reconnectAttempt = 0
+                    if submitted {
+                        live.emit("resume", payload: ["session_id": sessionID, "profile": profile])
+                    } else {
+                        submitted = true
+                        live.emit("run", payload: payload)
+                    }
+                    return
+                }
+                if packet == "__disconnected__" || packet.hasPrefix("__error__:") {
+                    if submitted {
+                        scheduleReconnect()
+                    } else {
+                        let message = packet.hasPrefix("__error__:") ? String(packet.dropFirst(10)) : String(localized: "Connection dropped")
+                        continuation.yield(.failed(message, retryable: !started))
+                        finish()
+                    }
+                    return
+                }
                 guard let (event, json) = Self.event(packet, namespace: "/chat-run") else { return }
                 switch event {
+                case "resumed":
+                    if json.bool("isWorking") {
+                        started = true
+                    } else if let completion = Self.completion(fromResume: json) {
+                        continuation.yield(.completed(output: completion.output, reasoning: completion.reasoning))
+                        finish()
+                    } else {
+                        continuation.yield(.failed(String(localized: "Run failed"), retryable: false))
+                        finish()
+                    }
                 case "run.started": started = true; continuation.yield(.started(.now))
                 case "message.delta":
                     let delta = json.string("delta", "text"); if !delta.isEmpty { started = true; continuation.yield(.text(delta)) }
@@ -124,14 +181,30 @@ final class ChatSocket: @unchecked Sendable {
                     let detail = Self.toolDetail(json)
                     let status: ToolStatus = event == "tool.started" ? .running : (event == "tool.failed" || json.bool("error") ? .error : .done)
                     continuation.yield(.tool(id: id.isEmpty ? "\(name)-\(UUID().uuidString)" : id, name: name, detail: detail, status: status, duration: json["duration_seconds"] == nil ? nil : json.double("duration_seconds")))
-                case "run.completed": continuation.yield(.completed(output: json.string("output"), reasoning: json.string("reasoning"))); continuation.finish(); self?.close()
-                case "approval.requested", "clarify.requested": continuation.yield(.requiresAction(event)); continuation.finish(); self?.close()
-                case "run.failed": continuation.yield(.failed(json.string("error", "message").nilIfEmpty ?? String(localized: "Run failed"), retryable: false)); continuation.finish(); self?.close()
+                case "run.completed": continuation.yield(.completed(output: json.string("output"), reasoning: json.string("reasoning"))); finish()
+                case "approval.requested", "clarify.requested": continuation.yield(.requiresAction(event)); finish()
+                case "run.failed": continuation.yield(.failed(json.string("error", "message").nilIfEmpty ?? String(localized: "Run failed"), retryable: false)); finish()
                 default: break
                 }
             }
-            continuation.onTermination = { [weak self] _ in self?.close() }
+            live.connect(onPacket: handlePacket)
+            continuation.onTermination = { [weak self] _ in retryTask.value?.cancel(); self?.close() }
         }
+    }
+
+    /// Recovers the final assistant message persisted while the phone was
+    /// changing networks or temporarily suspended.
+    static func completion(fromResume json: JSON) -> (output: String, reasoning: String)? {
+        guard !json.bool("isWorking") else { return nil }
+        let messages = json.objects("messages")
+        guard let lastUser = messages.lastIndex(where: { ["user", "command"].contains($0.string("role")) }),
+              lastUser + 1 < messages.count
+        else { return nil }
+        for message in messages[(lastUser + 1)...].reversed() where message.string("role") == "assistant" {
+            let output = message.string("display_content", "content")
+            if !output.isEmpty { return (output, message.string("reasoning")) }
+        }
+        return nil
     }
 
     private static func content(_ input: String, _ attachments: [Upload]) -> Any {

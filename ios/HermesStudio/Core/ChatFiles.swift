@@ -1,6 +1,45 @@
 import Foundation
 
+struct ParsedChatMessage {
+    let text: String
+    let files: [DownloadLink]
+}
+
 enum ChatFiles {
+    /// Studio persists uploaded files as JSON content blocks. Decode that
+    /// storage format before rendering so voice notes and documents remain
+    /// native attachment cards after a refresh.
+    static func parse(_ content: String) -> ParsedChatMessage {
+        guard let data = content.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+              let blocks = try? JSONSerialization.jsonObject(with: data) as? [JSON]
+        else { return ParsedChatMessage(text: content, files: links(in: content)) }
+
+        var recognized = false
+        var text: [String] = []
+        var files: [DownloadLink] = []
+        for block in blocks {
+            switch block.string("type") {
+            case "text":
+                recognized = true
+                if let value = block.string("text").nilIfEmpty { text.append(value) }
+            case "file", "image":
+                recognized = true
+                let path = block.string("path")
+                guard path.hasPrefix("/") || path.hasPrefix("~") else { continue }
+                let name = block.string("name").nilIfEmpty ?? URL(fileURLWithPath: path).lastPathComponent
+                if !files.contains(where: { $0.path == path }) {
+                    files.append(DownloadLink(label: name, path: path))
+                }
+            default:
+                continue
+            }
+        }
+        guard recognized else { return ParsedChatMessage(text: content, files: links(in: content)) }
+        let body = text.joined(separator: "\n\n")
+        for link in links(in: body) where !files.contains(where: { $0.path == link.path }) { files.append(link) }
+        return ParsedChatMessage(text: body, files: files)
+    }
+
     // Accepts both standard Markdown and the malformed (>path>) form emitted by a few agents.
     static func links(in text: String) -> [DownloadLink] {
         let patterns = [

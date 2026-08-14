@@ -313,6 +313,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ── lists ─────────────────────────────────────────────────────────────
 
     fun showTab(tab: Tab) {
+        if (_state.value.screen == Screen.Conversation) cancelActiveRun(abort = false)
         _state.update { it.copy(tab = tab, error = null) }
         when (tab) {
             Tab.Chats -> {
@@ -369,7 +370,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     fun selectProfile(name: String) {
-        cancelActiveRun(abort = true)
+        cancelActiveRun(abort = false)
         historyJob?.cancel()
         historyJob = null
         store.profile = name
@@ -397,7 +398,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Open an existing Studio conversation and load its history. */
     fun openSession(session: SessionSummary) {
-        cancelActiveRun(abort = true)
+        cancelActiveRun(abort = false)
         historyJob?.cancel()
         val profile = session.profile?.ifBlank { null }
             ?: _state.value.activeProfile.ifBlank { "default" }
@@ -488,7 +489,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startNewConversation() {
-        cancelActiveRun(abort = true)
+        cancelActiveRun(abort = false)
         historyJob?.cancel()
         historyJob = null
         val profile = _state.value.activeProfile.ifBlank { "default" }
@@ -2547,7 +2548,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun back() {
         when (_state.value.screen) {
-            Screen.Conversation -> cancelActiveRun(abort = true)
+            // Leaving a conversation only detaches this phone. The explicit
+            // stop button is the action that aborts an agent run on Studio.
+            Screen.Conversation -> cancelActiveRun(abort = false)
             Screen.Room -> leaveRoom()
             else -> Unit
         }

@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -3439,8 +3441,14 @@ internal fun StudioTopBar(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun StudioTabs(state: UiState, viewModel: AppViewModel) {
+    // Keeping the navigation bar in Scaffold while the IME covers it reserves
+    // a full invisible bar between the composer and keyboard. Material apps
+    // hide bottom navigation during text entry, then restore it with the IME.
+    if (WindowInsets.isImeVisible) return
+
     val colors = NavigationBarItemDefaults.colors(
         selectedIconColor = MaterialTheme.colorScheme.primary,
         selectedTextColor = MaterialTheme.colorScheme.primary,

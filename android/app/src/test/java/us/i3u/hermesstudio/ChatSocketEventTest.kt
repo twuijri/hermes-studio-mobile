@@ -1,5 +1,6 @@
 package us.i3u.hermesstudio
 
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -67,5 +68,35 @@ class ChatSocketEventTest {
         )
 
         assertEquals(ToolRunStatus.Error, event?.status)
+    }
+
+    @Test
+    fun `resume recovers the answer completed during a temporary disconnect`() {
+        val payload = JSONObject()
+            .put("isWorking", false)
+            .put(
+                "messages",
+                JSONArray()
+                    .put(JSONObject().put("role", "assistant").put("content", "old answer"))
+                    .put(JSONObject().put("role", "user").put("content", "voice attachment"))
+                    .put(
+                        JSONObject()
+                            .put("role", "assistant")
+                            .put("content", "transcription completed")
+                            .put("reasoning", "audio processed"),
+                    ),
+            )
+
+        val event = completionFromResume(payload)
+
+        assertEquals("transcription completed", event?.output)
+        assertEquals("audio processed", event?.reasoning)
+    }
+
+    @Test
+    fun `resume does not complete while server still works`() {
+        val payload = JSONObject().put("isWorking", true).put("messages", JSONArray())
+
+        assertNull(completionFromResume(payload))
     }
 }
