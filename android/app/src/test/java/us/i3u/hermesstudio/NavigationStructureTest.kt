@@ -104,4 +104,14 @@ class NavigationStructureTest {
         assertTrue(viewModel.contains("fun openProfiles()"))
         assertFalse("callers must not bypass origin tracking", activity.contains("show(Screen.Profiles)"))
     }
+
+    @Test
+    fun conversationDoesNotReserveSystemBarAboveTheKeyboard() {
+        val conversation = activity.substringAfter("private fun ConversationScreen")
+            .substringBefore("private fun MessageBubble")
+
+        assertTrue(conversation.contains("contentWindowInsets = WindowInsets(0, 0, 0, 0)"))
+        assertTrue(conversation.contains("bottomBar = { StudioTabs(state, viewModel) }"))
+        assertTrue(conversation.contains(".imePadding()"))
+    }
 }

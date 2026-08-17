@@ -862,6 +862,10 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
         onRefresh = { viewModel.refreshConversation() },
     )
     Scaffold(
+        // The composer applies the IME inset itself. Scaffold's default system
+        // bottom inset would otherwise be added above the keyboard as a second,
+        // empty navigation-bar-sized strip.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             StudioTopBar(
                 title = state.openSession?.title ?: stringResource(R.string.action_new_chat),
