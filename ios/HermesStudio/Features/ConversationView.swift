@@ -79,7 +79,7 @@ struct ConversationView: View {
 
     private func reload() async {
         loading = true
-        do { lines = try await store.api.messages(sessionID: session.id).map { ChatLine(text: $0.content, fromUser: $0.role == "user", sender: $0.role == "user" ? nil : session.profile) } }
+        do { lines = try await store.api.messages(sessionID: session.id).map { ChatLine(text: $0.content, fromUser: $0.role == "user", timestamp: $0.sentAt, sender: $0.role == "user" ? nil : session.profile) } }
         catch { if lines.isEmpty && session.title != String(localized: "New conversation") { store.errorMessage = error.localizedDescription } }
         loading = false
     }
@@ -167,7 +167,7 @@ private struct MessageBubble: View {
                 }
                 if !parsed.text.isEmpty { MarkdownText(text: parsed.text).font(.body).foregroundStyle(line.isError ? .red : .primary) }
                 ForEach(parsed.files) { link in FileDownloadCard(link: link, url: api.downloadURL(path: link.path, name: ChatFiles.fileName(for: link), profile: sessionProfile)) }
-                HStack(spacing: 5) { if line.isStreaming { ProgressView().controlSize(.mini) }; Text(line.timestamp.chatTime) }.font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 5) { if line.isStreaming { ProgressView().controlSize(.mini) }; if let timestamp = line.timestamp { Text(timestamp.chatTime) } }.font(.caption2).foregroundStyle(.secondary)
             }
             // Assistant replies need a real proposed width so an RTL paragraph
             // can align against the bubble's right edge. User bubbles remain

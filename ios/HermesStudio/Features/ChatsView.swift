@@ -129,10 +129,3 @@ struct ProfileMenu: View {
             }
     }
 }
-
-extension String {
-    var relativeDate: String {
-        let formatter = ISO8601DateFormatter(); guard let date = formatter.date(from: self) else { return "" }
-        return date.formatted(.relative(presentation: .named))
-    }
-}

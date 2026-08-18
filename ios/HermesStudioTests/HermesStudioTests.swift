@@ -48,6 +48,29 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(completion?.reasoning, "audio processed")
     }
 
+    func testConversationMessageKeepsStudioUnixTimestamp() throws {
+        let seconds = 1_786_800_123.0
+        let message = Message([
+            "id": 42,
+            "role": "assistant",
+            "content": "older reply",
+            "timestamp": seconds,
+        ])
+
+        XCTAssertEqual(try XCTUnwrap(message.sentAt).timeIntervalSince1970, seconds, accuracy: 0.001)
+        XCTAssertEqual(
+            try XCTUnwrap(StudioTimestamp.date(from: "1786800123456")).timeIntervalSince1970,
+            1_786_800_123.456,
+            accuracy: 0.001
+        )
+    }
+
+    func testConversationMessageDoesNotInventMissingTimestamp() {
+        let message = Message(["role": "assistant", "content": "undated reply"])
+
+        XCTAssertNil(message.sentAt)
+    }
+
     func testDownloadURLCarriesProfileAndToken() throws {
         let client = APIClient(baseURL: "https://studio.example", token: "secret")
         let url = client.downloadURL(path: "/workspace/file.pdf", name: "file.pdf", profile: "main")

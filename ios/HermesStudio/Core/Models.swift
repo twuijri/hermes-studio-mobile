@@ -2,6 +2,24 @@ import Foundation
 
 typealias JSON = [String: Any]
 
+enum StudioTimestamp {
+    static func date(from raw: String?) -> Date? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if let value = Double(raw), value > 0 {
+            // Conversation messages use Unix seconds; group messages and a few
+            // older endpoints use milliseconds.
+            let seconds = value >= 100_000_000_000 ? value / 1_000 : value
+            return Date(timeIntervalSince1970: seconds)
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: raw) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: raw)
+    }
+}
+
 extension Dictionary where Key == String, Value == Any {
     func string(_ keys: String...) -> String {
         for key in keys {
@@ -123,6 +141,8 @@ struct Message: Identifiable, Hashable {
         } else { content = json.string("text", "message") }
         timestamp = json.string("timestamp", "createdAt", "created_at").nilIfEmpty
     }
+
+    var sentAt: Date? { StudioTimestamp.date(from: timestamp) }
 }
 
 struct Room: Identifiable, Hashable {
@@ -173,7 +193,7 @@ struct ChatLine: Identifiable, Hashable {
     var text: String
     var fromUser: Bool
     var isError: Bool
-    var timestamp: Date
+    var timestamp: Date?
     var sender: String?
     var reasoning: String
     var isStreaming: Bool
@@ -181,10 +201,10 @@ struct ChatLine: Identifiable, Hashable {
     var startedAt: Date?
     var finishedAt: Date?
 
-    init(text: String, fromUser: Bool, isError: Bool = false, timestamp: Date = .now, sender: String? = nil, reasoning: String = "", isStreaming: Bool = false, tools: [ToolStep] = []) {
+    init(text: String, fromUser: Bool, isError: Bool = false, timestamp: Date? = Date(), sender: String? = nil, reasoning: String = "", isStreaming: Bool = false, tools: [ToolStep] = []) {
         id = UUID(); self.text = text; self.fromUser = fromUser; self.isError = isError; self.timestamp = timestamp
         self.sender = sender; self.reasoning = reasoning; self.isStreaming = isStreaming; self.tools = tools
-        startedAt = isStreaming ? timestamp : nil; finishedAt = isStreaming ? nil : timestamp
+        startedAt = isStreaming ? (timestamp ?? .now) : nil; finishedAt = isStreaming ? nil : timestamp
     }
 }
 
@@ -383,6 +403,11 @@ struct DownloadLink: Identifiable, Hashable {
 
 extension String {
     var nilIfEmpty: String? { trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self }
+
+    var relativeDate: String {
+        guard let date = StudioTimestamp.date(from: self) else { return "" }
+        return date.formatted(.relative(presentation: .named))
+    }
 }
 
 extension Date {

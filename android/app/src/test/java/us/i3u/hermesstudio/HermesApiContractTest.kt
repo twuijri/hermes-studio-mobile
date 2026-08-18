@@ -72,6 +72,30 @@ class HermesApiContractTest {
     }
 
     @Test
+    fun `conversation history keeps the numeric Studio message timestamp`() {
+        enqueue(
+            """
+            {
+              "messages": [{
+                "id": 42,
+                "role": "assistant",
+                "content": "older reply",
+                "timestamp": 1786800123
+              }]
+            }
+            """.trimIndent(),
+        )
+
+        val message = api.messages("session-1").single()
+
+        assertEquals("1786800123", message.timestamp)
+        assertEquals(
+            "/api/hermes/sessions/conversations/session-1/messages?humanOnly=true",
+            server.takeRequest().path,
+        )
+    }
+
+    @Test
     fun `generated files use the authenticated Studio download contract`() {
         val url = api.downloadUrl(
             "/home/agent/.hermes/profiles/mohamed/workspace/My%20Slides.pptx",
