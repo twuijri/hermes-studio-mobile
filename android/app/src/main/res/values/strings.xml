@@ -104,7 +104,6 @@
     <string name="composer_hint">Type a message…</string>
     <string name="composer_recording">Recording…</string>
     <string name="composer_transcribing">Transcribing…</string>
-    <string name="composer_send_audio">Send audio</string>
     <string name="composer_uploading">Uploading…</string>
     <string name="composer_send">Send</string>
     <string name="composer_record">Record voice</string>

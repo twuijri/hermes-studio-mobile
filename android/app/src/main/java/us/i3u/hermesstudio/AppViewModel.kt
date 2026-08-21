@@ -941,18 +941,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Sends the recorded audio itself instead of its transcript. */
-    fun stopRecordingAndAttach() {
-        if (!_state.value.recording) return
-        val bytes = recorder.stop()
-        _state.update { it.copy(recording = false) }
-        if (bytes == null) {
-            _state.update { it.copy(error = str(R.string.error_recording_short)) }
-            return
-        }
-        attach(bytes, "voice-${System.currentTimeMillis()}.m4a", "audio/mp4")
-    }
-
     fun consumeTranscript() = _state.update { it.copy(transcript = null) }
 
     // ── model and reasoning ───────────────────────────────────────────────

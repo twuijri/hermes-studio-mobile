@@ -141,8 +141,9 @@ class HermesApiContractTest {
     }
 
     @Test
-    fun `transcription remains compatible with servers before profile status`() {
+    fun `transcription falls back to the settings route used by the official app`() {
         enqueue("""{"error":"Not found"}""", code = 404)
+        enqueue("""{"activeProvider":"groq","providers":[]}""")
         enqueue("""{"text":"legacy transcript"}""")
 
         assertEquals(
@@ -151,8 +152,10 @@ class HermesApiContractTest {
         )
 
         server.takeRequest()
+        assertEquals("/api/hermes/stt/settings?profile=default", server.takeRequest().path)
         val multipart = server.takeRequest().body.readUtf8()
-        assertFalse(multipart.contains("name=\"provider\""))
+        assertTrue(multipart.contains("name=\"provider\""))
+        assertTrue(multipart.contains("\r\n\r\ngroq\r\n"))
     }
 
     @Test

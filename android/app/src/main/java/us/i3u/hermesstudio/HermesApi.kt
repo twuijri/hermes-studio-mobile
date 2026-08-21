@@ -1223,11 +1223,21 @@ class HermesApi(
         val status = try {
             call("/api/hermes/stt/profile-status?profile=${enc(profile)}")
         } catch (failure: HermesException) {
-            if (failure.statusCode == 404) return null
-            throw failure
+            if (failure.statusCode == 404) {
+                try {
+                    call("/api/hermes/stt/settings?profile=${enc(profile)}")
+                } catch (settingsFailure: HermesException) {
+                    if (settingsFailure.statusCode == 404) return null
+                    throw settingsFailure
+                }
+            } else {
+                throw failure
+            }
         }
         val provider = firstNonBlank(status, "activeProvider")
-        if (status.optBoolean("configured", false) && provider != null && provider != "browser") return provider
+        // profile-status reports `configured`; the settings route used by the
+        // official mobile app only exposes the selected active provider.
+        if (status.optBoolean("configured", true) && provider != null && provider != "browser") return provider
         val reason = firstNonBlank(status, "reason") ?: "no server-backed STT provider is configured"
         throw HermesException("STT unavailable: $reason", statusCode = 409)
     }

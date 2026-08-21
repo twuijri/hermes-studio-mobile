@@ -290,7 +290,20 @@ final class APIClient: @unchecked Sendable {
     }
 
     func transcribe(data: Data, name: String, mime: String, profile: String) async throws -> String {
-        let result = try await multipart("/api/hermes/stt/transcribe?profile=\(profile.urlEncoded)", data: data, name: name, mime: mime, field: "file", profile: profile)
+        let settings = try await object("/api/hermes/stt/settings?profile=\(profile.urlEncoded)", profile: profile)
+        let provider = settings.string("activeProvider")
+        guard !provider.isEmpty, provider != "browser" else {
+            throw HermesError.server(String(localized: "Configure a server-backed speech recognition provider in Studio first"))
+        }
+        let result = try await multipart(
+            "/api/hermes/stt/transcribe?profile=\(profile.urlEncoded)",
+            data: data,
+            name: name,
+            mime: mime,
+            field: "audio",
+            fields: ["provider": provider],
+            profile: profile
+        )
         return result.string("text", "transcript")
     }
 
@@ -310,9 +323,14 @@ final class APIClient: @unchecked Sendable {
         return (result.string("output", "message", "text"), result.string("reasoning", "thinking"))
     }
 
-    private func multipart(_ path: String, data: Data, name: String, mime: String, field: String, profile: String?) async throws -> JSON {
+    private func multipart(_ path: String, data: Data, name: String, mime: String, field: String, fields: [String: String] = [:], profile: String?) async throws -> JSON {
         let boundary = "HermesBoundary\(UUID().uuidString)"
         var body = Data()
+        for (key, value) in fields {
+            body.append("--\(boundary)\r\n")
+            body.append("Content-Disposition: form-data; name=\"\(key.replacingOccurrences(of: "\"", with: ""))\"\r\n\r\n")
+            body.append("\(value)\r\n")
+        }
         body.append("--\(boundary)\r\n")
         body.append("Content-Disposition: form-data; name=\"\(field)\"; filename=\"\(name.replacingOccurrences(of: "\"", with: ""))\"\r\n")
         body.append("Content-Type: \(mime)\r\n\r\n")

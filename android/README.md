@@ -89,8 +89,8 @@ directly and renders a native, phone-shaped interface instead of wrapping a web 
   on every run, the same field the web composer sets
 - Attachments upload to your server and ride along with the message as proper
   content blocks
-- **Voice**: record, then either transcribe into the composer through your Studio
-  STT provider or send the take itself as audio
+- **Voice**: record, then transcribe directly into the composer through your Studio
+  STT provider without sending the recording as a chat attachment
 - Profiles screen to switch which agent a new chat talks to
 - Start a fresh conversation at any time
 - Studio's dark palette, RTL-aware layout (Arabic reads correctly)

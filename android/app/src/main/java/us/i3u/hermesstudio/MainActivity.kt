@@ -1573,7 +1573,6 @@ private fun Composer(
                     modifier = Modifier.weight(1f),
                 )
                 if (state.recording) {
-                    TextButton(onClick = { viewModel.stopRecordingAndAttach() }) { Text(stringResource(R.string.composer_send_audio)) }
                     TextButton(onClick = { viewModel.cancelRecording() }) { Text(stringResource(R.string.action_cancel)) }
                 }
             }

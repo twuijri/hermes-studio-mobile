@@ -103,7 +103,6 @@
     <string name="composer_hint">اكتب رسالة…</string>
     <string name="composer_recording">جارٍ التسجيل…</string>
     <string name="composer_transcribing">جارٍ التفريغ…</string>
-    <string name="composer_send_audio">أرسل الصوت</string>
     <string name="composer_uploading">جارٍ الرفع…</string>
     <string name="composer_send">إرسال</string>
     <string name="composer_record">تسجيل صوتي</string>
