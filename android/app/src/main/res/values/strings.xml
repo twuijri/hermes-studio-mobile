@@ -708,4 +708,5 @@
     <string name="insights_memory">System memory</string>
     <string name="insights_workers">Bridge workers</string>
     <string name="insights_live_sessions">Live sessions</string>
+    <string name="voice_stop_reply">Stop voice</string>
 </resources>

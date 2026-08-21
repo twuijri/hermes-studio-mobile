@@ -1290,6 +1290,19 @@ class HermesApi(
             ?: throw HermesException("The provider returned no text")
     }
 
+    /** Turns an assistant reply into MP3 using the profile's Studio TTS settings. */
+    fun synthesize(profile: String, text: String): ByteArray {
+        val body = JSONObject().put("text", text).put("options", JSONObject().put("format", "mp3"))
+        val builder = request("/api/hermes/tts/synthesize", "POST", body, profile).newBuilder()
+            .header("Accept", "audio/mpeg")
+        client.newCall(builder.build()).execute().use { response ->
+            val bytes = response.body?.bytes().orEmpty()
+            if (!response.isSuccessful) throw HermesException("HTTP ${response.code}", response.code)
+            if (bytes.isEmpty()) throw HermesException("The voice provider returned no audio")
+            return bytes
+        }
+    }
+
     /**
      * Current Studio versions require the selected provider in the multipart
      * request. A 404 means an older server, whose transcribe route inferred it.

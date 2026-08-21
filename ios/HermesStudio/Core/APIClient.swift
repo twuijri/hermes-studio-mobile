@@ -358,6 +358,22 @@ final class APIClient: @unchecked Sendable {
         return result.string("text", "transcript")
     }
 
+    func synthesize(text: String, profile: String) async throws -> Data {
+        var request = URLRequest(url: try url("/api/hermes/tts/synthesize"))
+        request.httpMethod = "POST"
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("audio/mpeg", forHTTPHeaderField: "Accept")
+        request.setValue(profile, forHTTPHeaderField: "X-Hermes-Profile")
+        if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "options": ["format": "mp3"]])
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw HermesError.http((response as? HTTPURLResponse)?.statusCode ?? -1, Self.errorDetail(data))
+        }
+        guard !data.isEmpty else { throw HermesError.malformedResponse }
+        return data
+    }
+
     func runChatREST(profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?) async throws -> (String, String) {
         let content: Any
         if attachments.isEmpty { content = input }

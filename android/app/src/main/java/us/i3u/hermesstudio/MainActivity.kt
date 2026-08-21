@@ -1684,6 +1684,13 @@ private fun Composer(
                 sheet = ComposerSheet.Model
             }
             Spacer(modifier = Modifier.weight(1f))
+            if (state.speaking) {
+                AssistChip(
+                    onClick = { viewModel.stopSpeaking() },
+                    label = { Text(stringResource(R.string.voice_stop_reply)) },
+                    leadingIcon = { Icon(Icons.Filled.Stop, null, Modifier.size(15.dp)) },
+                )
+            }
             ContextUsage(state)
         }
     }

@@ -32,3 +32,31 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         return outputURL
     }
 }
+
+@MainActor
+final class SpeechPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published var isPlaying = false
+    private var player: AVAudioPlayer?
+
+    func play(_ data: Data) throws {
+        stop()
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .spokenAudio)
+        try session.setActive(true)
+        let player = try AVAudioPlayer(data: data)
+        player.delegate = self
+        player.prepareToPlay()
+        player.play()
+        self.player = player
+        isPlaying = true
+    }
+
+    func stop() {
+        player?.stop(); player = nil; isPlaying = false
+        try? AVAudioSession.sharedInstance().setActive(false)
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in stop() }
+    }
+}

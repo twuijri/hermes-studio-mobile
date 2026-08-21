@@ -3,6 +3,7 @@ package us.i3u.hermesstudio
 import android.app.Application
 import android.app.DownloadManager
 import android.net.Uri
+import android.media.MediaPlayer
 import android.os.Environment
 import android.webkit.MimeTypeMap
 import androidx.lifecycle.AndroidViewModel
@@ -97,6 +98,9 @@ data class UiState(
     val transcribing: Boolean = false,
     /** Text produced by the last recording, consumed by the composer. */
     val transcript: String? = null,
+    /** The next submitted draft came from STT and should receive a spoken reply. */
+    val voiceReplyPending: Boolean = false,
+    val speaking: Boolean = false,
     val models: List<ModelOption> = emptyList(),
     /** Profile whose entries are currently in [models]. */
     val modelsProfile: String? = null,
@@ -182,6 +186,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val chat = ChatSocket(store.baseUrl, store.token)
     private val group = GroupSocket(store.baseUrl, store.token)
     private val recorder = Recorder(app)
+    private var speechPlayer: MediaPlayer? = null
     private var runJob: kotlinx.coroutines.Job? = null
     private var historyJob: kotlinx.coroutines.Job? = null
     private var roomJob: kotlinx.coroutines.Job? = null
@@ -591,6 +596,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val selectedModel = _state.value.sessionModel
         val selectedProvider = _state.value.sessionProvider
         val reasoningEffort = _state.value.reasoningEffort
+        val wantsVoiceReply = _state.value.voiceReplyPending
 
         // Studio's own client names a conversation before it exists, which is
         // what lets the very first message belong to a session.
@@ -609,6 +615,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 attachments = emptyList(),
                 error = null,
                 activity = null,
+                voiceReplyPending = false,
             )
         }
 
@@ -617,6 +624,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             var answer = StringBuilder()
             var thinking = StringBuilder()
             var streamed = false
+            var finalReply = ""
             val runStartedAt = System.currentTimeMillis()
 
             fun ensureStreamingReply(startedAtMillis: Long = runStartedAt) {
@@ -670,6 +678,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             }
                             is RunEvent.Done -> {
                                 val output = event.output.ifBlank { answer.toString() }
+                                finalReply = output
                                 val reasoning = event.reasoning.ifBlank { thinking.toString() }
                                 if (streamed) {
                                     updateLastReply(output, reasoning, streaming = false)
@@ -731,6 +740,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         reasoningEffort = reasoningEffort,
                         model = selectedModel,
                         provider = selectedProvider,
+                        speakReply = wantsVoiceReply,
                     )
                     finishRun(sessionId)
                     return@launch
@@ -741,6 +751,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             }
+            if (wantsVoiceReply && finalReply.isNotBlank()) speak(finalReply, profile)
             finishRun(sessionId)
         }
     }
@@ -754,6 +765,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         reasoningEffort: String?,
         model: String?,
         provider: String?,
+        speakReply: Boolean = false,
     ) {
         runCatching {
             withContext(Dispatchers.IO) {
@@ -776,6 +788,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 ChatLine(reply.output, fromUser = false, reasoning = reply.reasoning)
             }
             _state.update { it.copy(lines = it.lines + line, sending = false, activity = null) }
+            if (speakReply && !line.isError && line.text.isNotBlank()) speak(line.text, profile)
         }.onFailure { failure ->
             if (failure is kotlinx.coroutines.CancellationException || activeRunSessionId != sessionId) {
                 return@onFailure
@@ -972,7 +985,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     api.transcribe(profile, bytes, "voice.m4a", "audio/mp4")
                 }
             }.onSuccess { text ->
-                _state.update { it.copy(transcribing = false, transcript = text) }
+                _state.update { it.copy(transcribing = false, transcript = text, voiceReplyPending = true) }
             }.onFailure { failure ->
                 _state.update { it.copy(transcribing = false, error = failure.readableMessage(localized)) }
             }
@@ -980,6 +993,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun consumeTranscript() = _state.update { it.copy(transcript = null) }
+
+    fun stopSpeaking() {
+        speechPlayer?.release()
+        speechPlayer = null
+        _state.update { it.copy(speaking = false) }
+    }
+
+    private fun speak(text: String, profile: String) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val file = java.io.File.createTempFile("hermes-reply-", ".mp3", getApplication<Application>().cacheDir)
+                    file.writeBytes(api.synthesize(profile, text))
+                    file
+                }
+            }.onSuccess { file ->
+                stopSpeaking()
+                speechPlayer = MediaPlayer().apply {
+                    setDataSource(file.absolutePath)
+                    setOnCompletionListener { player -> player.release(); speechPlayer = null; file.delete(); _state.update { it.copy(speaking = false) } }
+                    setOnErrorListener { player, _, _ -> player.release(); speechPlayer = null; file.delete(); _state.update { it.copy(speaking = false) }; true }
+                    prepare()
+                    start()
+                }
+                _state.update { it.copy(speaking = true) }
+            }.onFailure { failure -> _state.update { it.copy(speaking = false, error = failure.readableMessage(localized)) } }
+        }
+    }
 
     // ── model and reasoning ───────────────────────────────────────────────
 

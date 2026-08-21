@@ -19,6 +19,8 @@ struct ConversationView: View {
     @State private var loadingContext = false
     @State private var socket = ChatSocket()
     @StateObject private var recorder = VoiceRecorder()
+    @StateObject private var speechPlayer = SpeechPlayer()
+    @State private var voiceReplyPending = false
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -86,6 +88,9 @@ struct ConversationView: View {
                     Label(selectedModel.nilIfEmpty ?? session.model.nilIfEmpty ?? String(localized: "Model"), systemImage: "cpu")
                 }
                 Spacer()
+                if speechPlayer.isPlaying {
+                    Button { speechPlayer.stop() } label: { Label("Stop voice", systemImage: "stop.fill") }
+                }
                 ContextUsageView(tokens: contextTokens, window: contextWindow, loading: loadingContext)
             }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.bottom, 8)
         }.padding(.top, 9).background(.ultraThinMaterial)
@@ -118,6 +123,7 @@ struct ConversationView: View {
     private func send() {
         if sending { socket.abort(sessionID: session.id); socket.close(); sending = false; if let index = lines.indices.last { lines[index].isStreaming = false; lines[index].finishedAt = .now }; return }
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty || !attachments.isEmpty else { return }
+        let wantsVoiceReply = voiceReplyPending; voiceReplyPending = false
         let files = attachments; input = ""; attachments = []; inputFocused = false
         lines.append(ChatLine(text: text.isEmpty ? files.map(\.name).joined(separator: ", ") : text, fromUser: true))
         lines.append(ChatLine(text: "", fromUser: false, sender: session.profile, isStreaming: true))
@@ -141,6 +147,9 @@ struct ConversationView: View {
                 }
             }
             if let index = lines.firstIndex(where: { $0.id == replyID }) { lines[index].isStreaming = false; lines[index].finishedAt = .now }
+            if wantsVoiceReply, let reply = lines.first(where: { $0.id == replyID })?.text.nilIfEmpty {
+                await speak(reply)
+            }
             sending = false; Preferences.setSession(session.id, profile: session.profile)
         }
     }
@@ -167,11 +176,16 @@ struct ConversationView: View {
     private func voice() async {
         if recorder.isRecording {
             guard let url = recorder.stop() else { return }; uploading = true; defer { uploading = false }
-            do { input = try await store.api.transcribe(data: Data(contentsOf: url), name: url.lastPathComponent, mime: "audio/mp4", profile: session.profile); inputFocused = true }
+            do { input = try await store.api.transcribe(data: Data(contentsOf: url), name: url.lastPathComponent, mime: "audio/mp4", profile: session.profile); voiceReplyPending = true; inputFocused = true }
             catch { store.errorMessage = error.localizedDescription }
         } else { _ = await recorder.toggle() }
     }
     private func newConversation() { input = ""; attachments = []; lines = [] }
+
+    private func speak(_ text: String) async {
+        do { try speechPlayer.play(await store.api.synthesize(text: text, profile: session.profile)) }
+        catch { store.errorMessage = error.localizedDescription }
+    }
 }
 
 private struct ContextUsageView: View {
