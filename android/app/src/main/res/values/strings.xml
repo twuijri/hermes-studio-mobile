@@ -103,6 +103,9 @@
     <!-- Composer -->
     <string name="composer_hint">Type a message…</string>
     <string name="composer_recording">Recording…</string>
+    <string name="context_usage">Context %1$s / %2$s</string>
+    <string name="context_loading">Context…</string>
+    <string name="context_unknown">Context —</string>
     <string name="composer_transcribing">Transcribing…</string>
     <string name="composer_uploading">Uploading…</string>
     <string name="composer_send">Send</string>
@@ -692,4 +695,17 @@
     <string name="pets_adopt">Adopt</string>
     <string name="pets_adopted_button">Adopted</string>
     <string name="pets_adopted">Your new companion is active</string>
+    <string name="insights_title">Insights</string>
+    <string name="insights_subtitle">Token usage and Studio runtime</string>
+    <string name="insights_days">%1$d days</string>
+    <string name="insights_usage">Usage</string>
+    <string name="insights_tokens">Tokens</string>
+    <string name="insights_sessions">Sessions</string>
+    <string name="insights_cost">Estimated cost</string>
+    <string name="insights_cache">Cache tokens</string>
+    <string name="insights_by_model">By model</string>
+    <string name="insights_runtime">Runtime</string>
+    <string name="insights_memory">System memory</string>
+    <string name="insights_workers">Bridge workers</string>
+    <string name="insights_live_sessions">Live sessions</string>
 </resources>

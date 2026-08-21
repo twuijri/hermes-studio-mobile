@@ -70,6 +70,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.ModelTraining
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -112,6 +113,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -251,7 +253,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Conversation, Screen.Room, Screen.Profiles, Screen.Settings,
         Screen.MoreSettings, Screen.SettingsGroup, Screen.Channels, Screen.Channel, Screen.CronJobs,
         Screen.CronJob, Screen.CronHistory, Screen.Kanban, Screen.KanbanTask, Screen.Skills,
-        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets,
+        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights,
         -> BackHandler { viewModel.back() }
         Screen.Groups, Screen.AgentHub -> BackHandler { viewModel.showTab(Tab.Chats) }
         else -> Unit
@@ -284,6 +286,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Plugins -> PluginsScreen(state, viewModel)
         Screen.Mcp -> McpScreen(state, viewModel)
         Screen.Pets -> PetsScreen(state, viewModel)
+        Screen.Insights -> InsightsScreen(state, viewModel)
         Screen.Login -> LoginScreen(state, viewModel)
         Screen.Chats -> ChatsScreen(state, viewModel)
         Screen.Groups -> GroupsScreen(state, viewModel)
@@ -1680,9 +1683,48 @@ private fun Composer(
                 viewModel.loadModels()
                 sheet = ComposerSheet.Model
             }
+            Spacer(modifier = Modifier.weight(1f))
+            ContextUsage(state)
         }
     }
 }
+
+@Composable
+private fun ContextUsage(state: UiState) {
+    val ratio = if (state.contextWindow > 0) {
+        (state.contextTokens.toFloat() / state.contextWindow.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+    val color = when {
+        ratio > .8f -> MaterialTheme.colorScheme.error
+        ratio > .6f -> Color(0xFFD59A2D)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(modifier = Modifier.widthIn(min = 84.dp, max = 122.dp)) {
+        Text(
+            if (state.loadingContext) stringResource(R.string.context_loading)
+            else if (state.contextWindow > 0) stringResource(
+                R.string.context_usage,
+                compactNumber(state.contextTokens),
+                compactNumber(state.contextWindow),
+            ) else stringResource(R.string.context_unknown),
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            maxLines = 1,
+        )
+        LinearProgressIndicator(
+            progress = { ratio },
+            modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(99.dp)),
+            color = color,
+            trackColor = MaterialTheme.colorScheme.outlineVariant,
+        )
+    }
+}
+
+private fun compactNumber(value: Long): String = when {
+    value >= 1_000_000 -> "%.1fM".format(Locale.US, value / 1_000_000.0)
+    value >= 1_000 -> "%.1fK".format(Locale.US, value / 1_000.0)
+    else -> value.toString()
+}.replace(".0", "")
 
 private enum class ComposerSheet { Options, Model, Reasoning }
 
@@ -2228,6 +2270,19 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
                 }
             }
 
+            item { StudioSectionTitle(stringResource(R.string.insights_title)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Insights,
+                        color = Color(0xFF7A5CFF),
+                        title = stringResource(R.string.insights_title),
+                        subtitle = stringResource(R.string.insights_subtitle),
+                        onClick = { viewModel.openInsights() },
+                    )
+                }
+            }
+
             item { StudioSectionTitle(stringResource(R.string.agent_hub_capabilities)) }
             item {
                 StudioGroupedCard {
@@ -2570,6 +2625,93 @@ private fun MoreSettingsScreen(state: UiState, viewModel: AppViewModel) {
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InsightsScreen(state: UiState, viewModel: AppViewModel) {
+    val usage = state.usageStats
+    val performance = state.runtimePerformance
+    Scaffold(
+        topBar = {
+            StudioTopBar(
+                title = stringResource(R.string.insights_title),
+                subtitle = stringResource(R.string.insights_subtitle),
+                onBack = { viewModel.back() },
+                actions = {
+                    IconButton(onClick = { viewModel.refreshInsights() }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.action_refresh))
+                    }
+                },
+            )
+        },
+        bottomBar = { StudioTabs(state, viewModel) },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(StudioHorizontalPadding, 8.dp, StudioHorizontalPadding, 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (state.loadingInsights) item { LoadingRow() }
+            state.error?.let { item { ErrorNote(it) { viewModel.dismissError() } } }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(7, 30, 90, 365).forEach { days ->
+                        AssistChip(
+                            onClick = { viewModel.openInsights(days) },
+                            label = { Text(stringResource(R.string.insights_days, days)) },
+                            leadingIcon = if (days == state.usageDays) ({ Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }) else null,
+                        )
+                    }
+                }
+            }
+            usage?.let { stats ->
+                item { StudioSectionTitle(stringResource(R.string.insights_usage)) }
+                item {
+                    StudioGroupedCard {
+                        InsightMetric(stringResource(R.string.insights_tokens), compactNumber(stats.inputTokens + stats.outputTokens))
+                        StudioCardDivider()
+                        InsightMetric(stringResource(R.string.insights_sessions), stats.sessions.toString())
+                        StudioCardDivider()
+                        InsightMetric(stringResource(R.string.insights_cost), "$${"%.4f".format(stats.cost)}")
+                        StudioCardDivider()
+                        InsightMetric(stringResource(R.string.insights_cache), compactNumber(stats.cacheReadTokens + stats.cacheWriteTokens))
+                    }
+                }
+                if (stats.models.isNotEmpty()) {
+                    item { StudioSectionTitle(stringResource(R.string.insights_by_model)) }
+                    items(stats.models.take(8), key = { it.name }) { row ->
+                        StudioGroupedCard { InsightMetric(row.name, compactNumber(row.totalTokens), row.sessions.toString()) }
+                    }
+                }
+            }
+            performance?.let { runtime ->
+                item { StudioSectionTitle(stringResource(R.string.insights_runtime)) }
+                item {
+                    StudioGroupedCard {
+                        InsightMetric("CPU", runtime.cpuPercent?.let { "%.1f%%".format(it) } ?: "—")
+                        StudioCardDivider()
+                        InsightMetric(stringResource(R.string.insights_memory), runtime.memoryPercent?.let { "%.1f%%".format(it) } ?: "—")
+                        StudioCardDivider()
+                        InsightMetric(stringResource(R.string.insights_workers), "${runtime.runningWorkers}/${runtime.workerCount}")
+                        StudioCardDivider()
+                        InsightMetric(stringResource(R.string.insights_live_sessions), runtime.sessionCount.toString())
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InsightMetric(label: String, value: String, supporting: String? = null) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            supporting?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
 }
 

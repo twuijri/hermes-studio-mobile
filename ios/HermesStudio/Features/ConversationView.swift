@@ -14,6 +14,9 @@ struct ConversationView: View {
     @State private var models: [ModelOption] = []
     @State private var selectedModel = ""
     @State private var selectedProvider = ""
+    @State private var contextTokens = 0
+    @State private var contextWindow = 0
+    @State private var loadingContext = false
     @State private var socket = ChatSocket()
     @StateObject private var recorder = VoiceRecorder()
     @FocusState private var inputFocused: Bool
@@ -71,20 +74,36 @@ struct ConversationView: View {
             }.padding(.horizontal, 10)
             HStack(spacing: 15) {
                 Menu { Button("Default") { store.setReasoning("") }; ForEach(["low", "medium", "high", "xhigh"], id: \.self) { value in Button(value.capitalized) { store.setReasoning(value) } } } label: { Label(store.reasoningEffort.nilIfEmpty?.capitalized ?? String(localized: "Default"), systemImage: "brain.head.profile") }
-                Menu { ForEach(models) { model in Button(model.name) { selectedModel = model.id; selectedProvider = model.provider } } } label: { Label(selectedModel.nilIfEmpty ?? session.model.nilIfEmpty ?? String(localized: "Model"), systemImage: "cpu") }
+                Menu { ForEach(models) { model in Button(model.name) { selectedModel = model.id; selectedProvider = model.provider; Task { await refreshContextWindow() } } } label: { Label(selectedModel.nilIfEmpty ?? session.model.nilIfEmpty ?? String(localized: "Model"), systemImage: "cpu") }
                 Spacer()
+                ContextUsageView(tokens: contextTokens, window: contextWindow, loading: loadingContext)
             }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.bottom, 8)
         }.padding(.top, 9).background(.ultraThinMaterial)
     }
 
     private func reload() async {
         loading = true
-        do { lines = try await store.api.messages(sessionID: session.id).map { ChatLine(text: $0.content, fromUser: $0.role == "user", timestamp: $0.sentAt, sender: $0.role == "user" ? nil : session.profile) } }
+        do {
+            let history = try await store.api.conversationHistory(sessionID: session.id)
+            lines = history.messages.map { ChatLine(text: $0.content, fromUser: $0.role == "user", timestamp: $0.sentAt, sender: $0.role == "user" ? nil : session.profile) }
+            contextTokens = history.contextTokens ?? contextTokens
+        }
         catch { if lines.isEmpty && session.title != String(localized: "New conversation") { store.errorMessage = error.localizedDescription } }
         loading = false
     }
 
-    private func loadModels() async { models = (try? await store.api.models(profile: session.profile)) ?? []; selectedModel = session.model.nilIfEmpty ?? profile?.model ?? models.first?.id ?? ""; selectedProvider = models.first { $0.id == selectedModel }?.provider ?? session.provider }
+    private func loadModels() async {
+        models = (try? await store.api.models(profile: session.profile)) ?? []
+        selectedModel = session.model.nilIfEmpty ?? profile?.model ?? models.first?.id ?? ""
+        selectedProvider = models.first { $0.id == selectedModel }?.provider ?? session.provider
+        await refreshContextWindow()
+    }
+
+    private func refreshContextWindow() async {
+        loadingContext = true
+        contextWindow = (try? await store.api.contextLength(profile: session.profile, provider: selectedProvider, model: selectedModel)) ?? contextWindow
+        loadingContext = false
+    }
 
     private func send() {
         if sending { socket.abort(sessionID: session.id); socket.close(); sending = false; if let index = lines.indices.last { lines[index].isStreaming = false; lines[index].finishedAt = .now }; return }
@@ -103,6 +122,7 @@ struct ConversationView: View {
                 case let .text(delta): lines[index].text += delta; gotAnything = true
                 case let .reasoning(delta): lines[index].reasoning += delta; gotAnything = true
                 case let .tool(id, name, detail, status, duration): updateTool(index: index, id: id, name: name, detail: detail, status: status, duration: duration); gotAnything = true
+                case let .usage(tokens, window): contextTokens = tokens; if let window { contextWindow = window }
                 case let .completed(output, reasoning): if lines[index].text.isEmpty { lines[index].text = output }; if lines[index].reasoning.isEmpty { lines[index].reasoning = reasoning }; lines[index].isStreaming = false; lines[index].finishedAt = .now
                 case let .requiresAction(kind): lines[index].text += kind.contains("approval") ? String(localized: "This run needs approval in Studio.") : String(localized: "This run needs clarification in Studio."); lines[index].isStreaming = false
                 case let .failed(message, retryable):
@@ -142,6 +162,33 @@ struct ConversationView: View {
         } else { _ = await recorder.toggle() }
     }
     private func newConversation() { input = ""; attachments = []; lines = [] }
+}
+
+private struct ContextUsageView: View {
+    let tokens: Int
+    let window: Int
+    let loading: Bool
+
+    private var ratio: Double { window > 0 ? min(1, max(0, Double(tokens) / Double(window))) : 0 }
+    private var color: Color { ratio > 0.8 ? .red : ratio > 0.6 ? .orange : .secondary }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(loading ? String(localized: "Context…") : window > 0 ? "\(String(localized: "Context")) \(compact(tokens)) / \(compact(window))" : String(localized: "Context —"))
+                .font(.caption2)
+                .lineLimit(1)
+            ProgressView(value: ratio)
+                .tint(color)
+                .frame(width: 88)
+        }
+        .foregroundStyle(color)
+    }
+
+    private func compact(_ value: Int) -> String {
+        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000).replacingOccurrences(of: ".0", with: "") }
+        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000).replacingOccurrences(of: ".0", with: "") }
+        return String(value)
+    }
 }
 
 private struct MessageBubble: View {

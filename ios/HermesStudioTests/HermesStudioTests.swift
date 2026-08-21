@@ -2,6 +2,12 @@ import XCTest
 @testable import HermesStudio
 
 final class HermesStudioTests: XCTestCase {
+    func testSocketUsageSupportsStudioContextFields() {
+        let packet = #"42/chat-run,["run.completed",{"contextTokens":24000,"contextWindow":128000}]"#
+        let event = ChatSocket.event(packet, namespace: "/chat-run")
+        XCTAssertEqual(event?.1.int("contextTokens"), 24_000)
+        XCTAssertEqual(event?.1.int("contextWindow"), 128_000)
+    }
     func testExtractsStandardStudioFileLink() {
         let links = ChatFiles.links(in: "[Download report](/home/agent/.hermes/profiles/main/workspace/report.pdf)")
         XCTAssertEqual(links.count, 1)

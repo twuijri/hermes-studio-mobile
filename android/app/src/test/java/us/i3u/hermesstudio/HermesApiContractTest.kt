@@ -141,6 +141,21 @@ class HermesApiContractTest {
     }
 
     @Test
+    fun `conversation context usage and model window preserve Studio values`() {
+        enqueue("""{"messages":[{"id":"1","role":"user","content":"hello"}],"contextTokens":24576}""")
+        enqueue("""{"context_length":131072}""")
+
+        val history = api.conversationHistory("session 1")
+        val window = api.contextLength("manager", "openai", "gpt-5")
+
+        assertEquals(24_576L, history.contextTokens)
+        assertEquals("hello", history.messages.single().content)
+        assertEquals(131_072L, window)
+        assertEquals("/api/hermes/sessions/conversations/session%201/messages?humanOnly=true", server.takeRequest().path)
+        assertEquals("/api/hermes/sessions/context-length?profile=manager&provider=openai&model=gpt-5", server.takeRequest().path)
+    }
+
+    @Test
     fun `transcription falls back to the settings route used by the official app`() {
         enqueue("""{"error":"Not found"}""", code = 404)
         enqueue("""{"activeProvider":"groq","providers":[]}""")

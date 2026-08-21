@@ -102,6 +102,9 @@
     <!-- صندوق الكتابة -->
     <string name="composer_hint">اكتب رسالة…</string>
     <string name="composer_recording">جارٍ التسجيل…</string>
+    <string name="context_usage">السياق %1$s / %2$s</string>
+    <string name="context_loading">السياق…</string>
+    <string name="context_unknown">السياق —</string>
     <string name="composer_transcribing">جارٍ التفريغ…</string>
     <string name="composer_uploading">جارٍ الرفع…</string>
     <string name="composer_send">إرسال</string>
@@ -691,4 +694,17 @@
     <string name="pets_adopt">اختيار</string>
     <string name="pets_adopted_button">تم اختياره</string>
     <string name="pets_adopted">تم تفعيل الحيوان المرافق الجديد</string>
+    <string name="insights_title">الإحصائيات</string>
+    <string name="insights_subtitle">استهلاك التوكن وأداء الاستديو</string>
+    <string name="insights_days">%1$d يوم</string>
+    <string name="insights_usage">الاستهلاك</string>
+    <string name="insights_tokens">التوكن</string>
+    <string name="insights_sessions">الجلسات</string>
+    <string name="insights_cost">التكلفة التقديرية</string>
+    <string name="insights_cache">توكن الكاش</string>
+    <string name="insights_by_model">حسب الموديل</string>
+    <string name="insights_runtime">أداء الاستديو</string>
+    <string name="insights_memory">ذاكرة النظام</string>
+    <string name="insights_workers">عمّال الجسر</string>
+    <string name="insights_live_sessions">الجلسات النشطة</string>
 </resources>

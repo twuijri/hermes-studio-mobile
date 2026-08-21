@@ -594,10 +594,11 @@ class HermesApi(
     }
 
     /** GET /api/hermes/sessions/conversations/{id}/messages — existing history. */
-    fun messages(sessionId: String, humanOnly: Boolean = true): List<Message> {
+    fun conversationHistory(sessionId: String, humanOnly: Boolean = true): ConversationHistory {
         val path = "/api/hermes/sessions/conversations/${enc(sessionId)}/messages?humanOnly=$humanOnly"
-        val array = call(path).optJSONArray("messages") ?: JSONArray()
-        return (0 until array.length()).mapNotNull { index ->
+        val root = call(path)
+        val array = root.optJSONArray("messages") ?: JSONArray()
+        val messages = (0 until array.length()).mapNotNull { index ->
             val item = array.optJSONObject(index) ?: return@mapNotNull null
             val content = item.optString("content")
             if (content.isBlank()) return@mapNotNull null
@@ -608,6 +609,80 @@ class HermesApi(
                 timestamp = firstNonBlank(item, "timestamp", "created_at", "createdAt"),
             )
         }
+        return ConversationHistory(
+            messages = messages,
+            contextTokens = root.firstLong("contextTokens", "context_tokens", "tokenCount", "token_count"),
+        )
+    }
+
+    fun messages(sessionId: String, humanOnly: Boolean = true): List<Message> =
+        conversationHistory(sessionId, humanOnly).messages
+
+    /** Maximum context window for the profile's currently selected model. */
+    fun contextLength(profile: String, provider: String?, model: String?): Long {
+        val query = listOfNotNull(
+            "profile=${enc(profile)}",
+            provider?.takeIf(String::isNotBlank)?.let { "provider=${enc(it)}" },
+            model?.takeIf(String::isNotBlank)?.let { "model=${enc(it)}" },
+        ).joinToString("&")
+        val root = call("/api/hermes/sessions/context-length?$query", profile = profile)
+        return root.firstLong("context_length", "contextLength")?.takeIf { it > 0 }
+            ?: throw HermesException("Studio returned no context length")
+    }
+
+    fun usageStats(days: Int): UsageStats {
+        val root = call("/api/hermes/usage/stats?days=${days.coerceIn(1, 365)}")
+        fun entries(key: String, nameKey: String) = root.optJSONArray(key).objects().map { item ->
+            UsageBreakdown(
+                name = item.optString(nameKey).ifBlank { "unknown" },
+                inputTokens = item.optLong("input_tokens"),
+                outputTokens = item.optLong("output_tokens"),
+                cacheReadTokens = item.optLong("cache_read_tokens"),
+                sessions = item.optInt("sessions"),
+                cost = item.optDouble("cost"),
+            )
+        }
+        val daily = root.optJSONArray("daily_usage").objects().map { item ->
+            DailyUsage(
+                date = item.optString("date"),
+                inputTokens = item.optLong("input_tokens"),
+                outputTokens = item.optLong("output_tokens"),
+                cacheReadTokens = item.optLong("cache_read_tokens"),
+                sessions = item.optInt("sessions"),
+                cost = item.optDouble("cost"),
+            )
+        }
+        return UsageStats(
+            inputTokens = root.optLong("total_input_tokens"),
+            outputTokens = root.optLong("total_output_tokens"),
+            cacheReadTokens = root.optLong("total_cache_read_tokens"),
+            cacheWriteTokens = root.optLong("total_cache_write_tokens"),
+            reasoningTokens = root.optLong("total_reasoning_tokens"),
+            sessions = root.optInt("total_sessions"),
+            cost = root.optDouble("total_cost"),
+            models = entries("model_usage", "model"),
+            agents = entries("agent_usage", "agent"),
+            daily = daily,
+        )
+    }
+
+    fun runtimePerformance(): RuntimePerformance {
+        val root = call("/api/hermes/performance/runtime")
+        val system = root.optJSONObject("system") ?: JSONObject()
+        val bridge = root.optJSONObject("bridge") ?: JSONObject()
+        val web = root.optJSONObject("web") ?: JSONObject()
+        val workers = bridge.optJSONArray("workers") ?: JSONArray()
+        val sessions = root.optJSONObject("sessions") ?: JSONObject()
+        return RuntimePerformance(
+            cpuPercent = system.optDouble("cpuPercent", Double.NaN).takeIf(Double::isFinite),
+            memoryPercent = system.optDouble("memoryPercent", Double.NaN).takeIf(Double::isFinite),
+            usedMemoryBytes = system.optLong("usedMemoryBytes").takeIf { it > 0 },
+            totalMemoryBytes = system.optLong("totalMemoryBytes").takeIf { it > 0 },
+            studioMemoryBytes = web.optJSONObject("memory")?.optLong("rss")?.takeIf { it > 0 },
+            workerCount = workers.length(),
+            runningWorkers = (0 until workers.length()).count { workers.optJSONObject(it)?.optBoolean("running") == true },
+            sessionCount = sessions.optInt("total", sessions.optJSONObject("byProfile")?.length() ?: 0),
+        )
     }
 
     // ── scheduled jobs ──────────────────────────────────────────────────
@@ -1554,6 +1629,65 @@ data class Message(
     val timestamp: String?,
 ) {
     val fromUser: Boolean get() = role == "user"
+}
+
+data class ConversationHistory(
+    val messages: List<Message>,
+    val contextTokens: Long?,
+)
+
+data class UsageStats(
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val cacheReadTokens: Long,
+    val cacheWriteTokens: Long,
+    val reasoningTokens: Long,
+    val sessions: Int,
+    val cost: Double,
+    val models: List<UsageBreakdown>,
+    val agents: List<UsageBreakdown>,
+    val daily: List<DailyUsage>,
+)
+
+data class UsageBreakdown(
+    val name: String,
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val cacheReadTokens: Long,
+    val sessions: Int,
+    val cost: Double,
+) { val totalTokens: Long get() = inputTokens + outputTokens }
+
+data class DailyUsage(
+    val date: String,
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val cacheReadTokens: Long,
+    val sessions: Int,
+    val cost: Double,
+) { val totalTokens: Long get() = inputTokens + outputTokens }
+
+data class RuntimePerformance(
+    val cpuPercent: Double?,
+    val memoryPercent: Double?,
+    val usedMemoryBytes: Long?,
+    val totalMemoryBytes: Long?,
+    val studioMemoryBytes: Long?,
+    val workerCount: Int,
+    val runningWorkers: Int,
+    val sessionCount: Int,
+)
+
+private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else
+    (0 until length()).mapNotNull { index -> optJSONObject(index) }
+
+private fun JSONObject.firstLong(vararg keys: String): Long? = keys.firstNotNullOfOrNull { key ->
+    if (!has(key) || isNull(key)) return@firstNotNullOfOrNull null
+    when (val value = opt(key)) {
+        is Number -> value.toLong()
+        is String -> value.toLongOrNull()
+        else -> null
+    }
 }
 
 data class Room(

@@ -5,6 +5,7 @@ enum LiveRunEvent {
     case text(String)
     case reasoning(String)
     case tool(id: String, name: String, detail: String?, status: ToolStatus, duration: Double?)
+    case usage(contextTokens: Int, contextWindow: Int?)
     case completed(output: String, reasoning: String)
     case requiresAction(String)
     case failed(String, retryable: Bool)
@@ -160,6 +161,7 @@ final class ChatSocket: @unchecked Sendable {
                 guard let (event, json) = Self.event(packet, namespace: "/chat-run") else { return }
                 switch event {
                 case "resumed":
+                    if let usage = Self.usage(json) { continuation.yield(usage) }
                     if json.bool("isWorking") {
                         started = true
                     } else if let completion = Self.completion(fromResume: json) {
@@ -181,7 +183,9 @@ final class ChatSocket: @unchecked Sendable {
                     let detail = Self.toolDetail(json)
                     let status: ToolStatus = event == "tool.started" ? .running : (event == "tool.failed" || json.bool("error") ? .error : .done)
                     continuation.yield(.tool(id: id.isEmpty ? "\(name)-\(UUID().uuidString)" : id, name: name, detail: detail, status: status, duration: json["duration_seconds"] == nil ? nil : json.double("duration_seconds")))
-                case "run.completed": continuation.yield(.completed(output: json.string("output"), reasoning: json.string("reasoning"))); finish()
+                case "run.completed":
+                    if let usage = Self.usage(json) { continuation.yield(usage) }
+                    continuation.yield(.completed(output: json.string("output"), reasoning: json.string("reasoning"))); finish()
                 case "approval.requested", "clarify.requested": continuation.yield(.requiresAction(event)); finish()
                 case "run.failed": continuation.yield(.failed(json.string("error", "message").nilIfEmpty ?? String(localized: "Run failed"), retryable: false)); finish()
                 default: break
@@ -190,6 +194,19 @@ final class ChatSocket: @unchecked Sendable {
             live.connect(onPacket: handlePacket)
             continuation.onTermination = { [weak self] _ in retryTask.value?.cancel(); self?.close() }
         }
+    }
+
+    private static func usage(_ json: JSON) -> LiveRunEvent? {
+        func integer(_ keys: [String]) -> Int? {
+            for key in keys {
+                if let value = json[key] as? NSNumber { return value.intValue }
+                if let value = json[key] as? String, let parsed = Int(value) { return parsed }
+            }
+            return nil
+        }
+        guard let used = integer(["contextTokens", "context_tokens", "tokenCount", "token_count"]) else { return nil }
+        let window = integer(["contextWindow", "context_window", "contextLength", "context_length"])
+        return .usage(contextTokens: max(0, used), contextWindow: window.flatMap { $0 > 0 ? $0 : nil })
     }
 
     /// Recovers the final assistant message persisted while the phone was

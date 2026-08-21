@@ -395,6 +395,33 @@ struct Upload: Identifiable, Hashable {
     let mime: String
 }
 
+struct UsageBreakdown: Identifiable {
+    let id: String
+    let name: String
+    let inputTokens: Int
+    let outputTokens: Int
+    let sessions: Int
+    let cost: Double
+    var totalTokens: Int { inputTokens + outputTokens }
+}
+
+struct UsageStats {
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheTokens: Int
+    let sessions: Int
+    let cost: Double
+    let models: [UsageBreakdown]
+}
+
+struct RuntimePerformance {
+    let cpuPercent: Double?
+    let memoryPercent: Double?
+    let workerCount: Int
+    let runningWorkers: Int
+    let sessionCount: Int
+}
+
 struct DownloadLink: Identifiable, Hashable {
     let id = UUID()
     let label: String

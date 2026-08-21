@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
 enum class Screen {
     Loading, Onboarding, Login, Chats, Groups, AgentHub, Conversation, Room, Profiles,
     Settings, MoreSettings, SettingsGroup, Channels, Channel, CronJobs, CronJob, CronHistory,
-    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets,
+    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights,
 }
 
 /** Settings is a short list of these; each opens its own screen. */
@@ -109,6 +109,9 @@ data class UiState(
     val appearance: String = "system",
     val sessionModel: String? = null,
     val sessionProvider: String? = null,
+    val contextTokens: Long = 0,
+    val contextWindow: Long = 0,
+    val loadingContext: Boolean = false,
     val defaultModel: String? = null,
     val savingSetting: Boolean = false,
     /** The tool the agent is running right now, when it says so. */
@@ -156,6 +159,10 @@ data class UiState(
     val pluginsUi: PluginsUiState = PluginsUiState(),
     val mcpUi: McpUiState = McpUiState(),
     val petsUi: PetsUiState = PetsUiState(),
+    val usageStats: UsageStats? = null,
+    val usageDays: Int = 30,
+    val runtimePerformance: RuntimePerformance? = null,
+    val loadingInsights: Boolean = false,
     val notice: String? = null,
 )
 
@@ -409,6 +416,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 openSession = session,
                 sessionModel = session.model,
                 sessionProvider = session.provider,
+                contextTokens = 0,
+                contextWindow = 0,
+                loadingContext = true,
                 lines = emptyList(),
                 attachments = emptyList(),
                 models = if (it.modelsProfile == profile) it.models else emptyList(),
@@ -420,15 +430,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         historyJob = viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { api.messages(session.id) } }
-                .onSuccess { history ->
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val history = api.conversationHistory(session.id)
+                    val window = runCatching { api.contextLength(profile, session.provider, session.model) }.getOrDefault(0)
+                    history to window
+                }
+            }
+                .onSuccess { (history, window) ->
                     _state.update { state ->
                         if (state.screen != Screen.Conversation || state.openSession?.id != session.id) {
                             return@update state
                         }
                         state.copy(
                             loadingHistory = false,
-                            lines = history.map { message ->
+                            loadingContext = false,
+                            contextTokens = history.contextTokens ?: 0,
+                            contextWindow = window,
+                            lines = history.messages.map { message ->
                                 ChatLine(
                                     text = message.content,
                                     fromUser = message.fromUser,
@@ -442,7 +461,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     if (failure is kotlinx.coroutines.CancellationException) return@onFailure
                     _state.update {
                         if (it.screen == Screen.Conversation && it.openSession?.id == session.id) {
-                            it.copy(loadingHistory = false, error = failure.readableMessage(localized))
+                            it.copy(loadingHistory = false, loadingContext = false, error = failure.readableMessage(localized))
                         } else {
                             it
                         }
@@ -455,17 +474,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshConversation() {
         val session = _state.value.openSession ?: return
         historyJob?.cancel()
-        _state.update { it.copy(loadingHistory = true, error = null) }
+        _state.update { it.copy(loadingHistory = true, loadingContext = true, error = null) }
         historyJob = viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { api.messages(session.id) } }
-                .onSuccess { history ->
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val profile = session.profile?.ifBlank { null } ?: currentProfile()
+                    val history = api.conversationHistory(session.id)
+                    val window = runCatching { api.contextLength(profile, session.provider, session.model) }.getOrDefault(0)
+                    history to window
+                }
+            }
+                .onSuccess { (history, window) ->
                     _state.update { state ->
                         if (state.screen != Screen.Conversation || state.openSession?.id != session.id) {
                             return@update state
                         }
                         state.copy(
                             loadingHistory = false,
-                            lines = history.map { message ->
+                            loadingContext = false,
+                            contextTokens = history.contextTokens ?: state.contextTokens,
+                            contextWindow = window.takeIf { it > 0 } ?: state.contextWindow,
+                            lines = history.messages.map { message ->
                                 ChatLine(
                                     text = message.content,
                                     fromUser = message.fromUser,
@@ -479,7 +508,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     if (failure is kotlinx.coroutines.CancellationException) return@onFailure
                     _state.update {
                         if (it.screen == Screen.Conversation && it.openSession?.id == session.id) {
-                            it.copy(loadingHistory = false, error = failure.readableMessage(localized))
+                            it.copy(loadingHistory = false, loadingContext = false, error = failure.readableMessage(localized))
                         } else {
                             it
                         }
@@ -502,6 +531,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 attachments = emptyList(),
                 sessionModel = null,
                 sessionProvider = null,
+                contextTokens = 0,
+                contextWindow = 0,
+                loadingContext = false,
                 models = if (it.modelsProfile == profile) it.models else emptyList(),
                 modelsProfile = it.modelsProfile.takeIf { loaded -> loaded == profile },
                 error = null,
@@ -629,6 +661,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             is RunEvent.Tool -> {
                                 ensureStreamingReply()
                                 updateLastTool(event)
+                            }
+                            is RunEvent.Usage -> _state.update {
+                                it.copy(
+                                    contextTokens = event.contextTokens,
+                                    contextWindow = event.contextWindow ?: it.contextWindow,
+                                )
                             }
                             is RunEvent.Done -> {
                                 val output = event.output.ifBlank { answer.toString() }
@@ -979,7 +1017,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun selectModel(option: ModelOption) {
         val sessionId = _state.value.openSession?.id
             ?: store.sessionFor(currentProfile()).ifBlank { null }
-        _state.update { it.copy(sessionModel = option.id, sessionProvider = option.provider) }
+        _state.update {
+            it.copy(
+                sessionModel = option.id,
+                sessionProvider = option.provider,
+                loadingContext = true,
+            )
+        }
+        viewModelScope.launch {
+            val profile = currentProfile()
+            val length = runCatching {
+                withContext(Dispatchers.IO) { api.contextLength(profile, option.provider, option.id) }
+            }.getOrDefault(0)
+            _state.update {
+                if (it.sessionModel == option.id && it.sessionProvider == option.provider) {
+                    it.copy(
+                        contextWindow = length.takeIf { value -> value > 0 } ?: it.contextWindow,
+                        loadingContext = false,
+                    )
+                } else it
+            }
+        }
         if (sessionId == null) return
 
         viewModelScope.launch {
@@ -1606,6 +1664,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun openPets() {
         _state.update { it.copy(screen = Screen.Pets, error = null, notice = null) }
         loadPets()
+    }
+
+    fun openInsights(days: Int = _state.value.usageDays) {
+        _state.update { it.copy(screen = Screen.Insights, usageDays = days, loadingInsights = true, error = null) }
+        refreshInsights(days)
+    }
+
+    fun refreshInsights(days: Int = _state.value.usageDays) {
+        _state.update { it.copy(usageDays = days, loadingInsights = true, error = null) }
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) { api.usageStats(days) to api.runtimePerformance() }
+            }
+            result.onSuccess { (usage, performance) ->
+                _state.update { it.copy(usageStats = usage, runtimePerformance = performance, loadingInsights = false) }
+            }.onFailure { failure ->
+                _state.update { it.copy(loadingInsights = false, error = failure.readableMessage(localized)) }
+            }
+        }
     }
 
     fun refreshPets() = loadPets()
@@ -2548,7 +2625,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Screen.CronJob, Screen.CronHistory -> Screen.CronJobs
                 Screen.KanbanTask -> Screen.Kanban
                 Screen.Skill -> Screen.Skills
-                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets -> Screen.AgentHub
+                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights -> Screen.AgentHub
                 Screen.Channels, Screen.SettingsGroup, Screen.CronJobs -> state.toolReturnScreen
                 Screen.Profiles -> state.profilesReturnScreen
                 Screen.MoreSettings -> Screen.Settings

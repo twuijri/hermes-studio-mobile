@@ -107,9 +107,60 @@ final class APIClient: @unchecked Sendable {
             .filter { !$0.id.isEmpty }
     }
 
-    func messages(sessionID: String) async throws -> [Message] {
+    func conversationHistory(sessionID: String) async throws -> (messages: [Message], contextTokens: Int?) {
         let path = "/api/hermes/sessions/conversations/\(sessionID.urlEncoded)/messages?humanOnly=true"
-        return try await array(path, keys: ["messages"]).map(Message.init)
+        let root = try await object(path)
+        let messages = root.objects("messages").map(Message.init)
+        let raw = root["contextTokens"] ?? root["context_tokens"] ?? root["tokenCount"] ?? root["token_count"]
+        let tokens = (raw as? NSNumber)?.intValue ?? Int(String(describing: raw ?? ""))
+        return (messages, tokens)
+    }
+
+    func messages(sessionID: String) async throws -> [Message] {
+        try await conversationHistory(sessionID: sessionID).messages
+    }
+
+    func contextLength(profile: String, provider: String, model: String) async throws -> Int {
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "profile", value: profile),
+            URLQueryItem(name: "provider", value: provider.nilIfEmpty),
+            URLQueryItem(name: "model", value: model.nilIfEmpty),
+        ].filter { $0.value != nil }
+        let query = components.percentEncodedQuery ?? "profile=\(profile.urlEncoded)"
+        let root = try await object("/api/hermes/sessions/context-length?\(query)", profile: profile)
+        let length = root.int("context_length", "contextLength")
+        guard length > 0 else { throw HermesError.malformedResponse }
+        return length
+    }
+
+    func usageStats(days: Int) async throws -> UsageStats {
+        let root = try await object("/api/hermes/usage/stats?days=\(min(365, max(1, days)))")
+        let models = root.objects("model_usage").enumerated().map { index, item in
+            let name = item.string("model", "name").nilIfEmpty ?? "Unknown"
+            return UsageBreakdown(
+                id: "\(name)-\(index)", name: name,
+                inputTokens: item.int("input_tokens"), outputTokens: item.int("output_tokens"),
+                sessions: item.int("sessions"), cost: item.double("cost")
+            )
+        }
+        return UsageStats(
+            inputTokens: root.int("total_input_tokens"), outputTokens: root.int("total_output_tokens"),
+            cacheTokens: root.int("total_cache_read_tokens") + root.int("total_cache_write_tokens"),
+            sessions: root.int("total_sessions"), cost: root.double("total_cost"), models: models
+        )
+    }
+
+    func runtimePerformance() async throws -> RuntimePerformance {
+        let root = try await object("/api/hermes/performance/runtime")
+        let system = root.object("system"), bridge = root.object("bridge"), sessions = root.object("sessions")
+        let workers = bridge.objects("workers")
+        return RuntimePerformance(
+            cpuPercent: system["cpuPercent"] == nil ? nil : system.double("cpuPercent"),
+            memoryPercent: system["memoryPercent"] == nil ? nil : system.double("memoryPercent"),
+            workerCount: workers.count, runningWorkers: workers.filter { $0.bool("running") }.count,
+            sessionCount: sessions.int("total")
+        )
     }
 
     func renameSession(_ id: String, title: String) async throws { _ = try await object("/api/hermes/sessions/\(id.urlEncoded)/rename", method: "POST", body: ["title": title]) }

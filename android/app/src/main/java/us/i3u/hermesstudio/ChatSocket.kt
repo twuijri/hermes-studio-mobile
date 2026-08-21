@@ -25,6 +25,7 @@ sealed interface RunEvent {
         val durationSeconds: Double?,
         val occurredAtMillis: Long,
     ) : RunEvent
+    data class Usage(val contextTokens: Long, val contextWindow: Long?) : RunEvent
     data class Done(val output: String, val reasoning: String) : RunEvent
     data class RequiresAction(val kind: RequiredAction) : RunEvent
     data class Failed(val error: String, val retryableTransport: Boolean) : RunEvent
@@ -111,6 +112,7 @@ class ChatSocket(
         }
         live.on("resumed") { args ->
             val event = eventPayload(args) ?: return@on
+            usageFrom(event)?.let { trySend(it) }
             if (event.optBoolean("isWorking", false)) {
                 runStarted = true
                 return@on
@@ -172,6 +174,7 @@ class ChatSocket(
         live.on("run.completed") { args ->
             terminal = true
             val event = args.firstOrNull() as? JSONObject
+            usageFrom(event)?.let { trySend(it) }
             trySend(
                 RunEvent.Done(
                     output = event?.optString("output").orEmpty(),
@@ -248,6 +251,24 @@ class ChatSocket(
                 }
             }
         }
+}
+
+internal fun usageFrom(payload: JSONObject?): RunEvent.Usage? {
+    payload ?: return null
+    fun number(vararg keys: String): Long? = keys.firstNotNullOfOrNull { key ->
+        if (!payload.has(key) || payload.isNull(key)) return@firstNotNullOfOrNull null
+        when (val value = payload.opt(key)) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull()
+            else -> null
+        }
+    }
+    val used = number("contextTokens", "context_tokens", "tokenCount", "token_count") ?: return null
+    return RunEvent.Usage(
+        contextTokens = used.coerceAtLeast(0),
+        contextWindow = number("contextWindow", "context_window", "contextLength", "context_length")
+            ?.takeIf { it > 0 },
+    )
 }
 
 /** Returns the answer persisted while this phone was temporarily offline. */

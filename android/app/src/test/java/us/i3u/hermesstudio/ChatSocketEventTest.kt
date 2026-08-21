@@ -8,6 +8,17 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ChatSocketEventTest {
+    @Test
+    fun `usage event accepts Studio camel and snake case fields`() {
+        assertEquals(
+            RunEvent.Usage(24_000, 128_000),
+            usageFrom(JSONObject().put("contextTokens", 24_000).put("contextWindow", 128_000)),
+        )
+        assertEquals(
+            RunEvent.Usage(25_000, null),
+            usageFrom(JSONObject().put("context_tokens", "25000")),
+        )
+    }
 
     @Test
     fun `studio tool start keeps its id name and useful argument`() {
