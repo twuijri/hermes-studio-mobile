@@ -151,7 +151,7 @@ class HermesApiContractTest {
         assertEquals(24_576L, history.contextTokens)
         assertEquals("hello", history.messages.single().content)
         assertEquals(131_072L, window)
-        assertEquals("/api/hermes/sessions/conversations/session%201/messages?humanOnly=true", server.takeRequest().path)
+        assertEquals("/api/hermes/sessions/conversations/session+1/messages?humanOnly=true", server.takeRequest().path)
         assertEquals("/api/hermes/sessions/context-length?profile=manager&provider=openai&model=gpt-5", server.takeRequest().path)
     }
 
