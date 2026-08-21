@@ -1296,7 +1296,7 @@ class HermesApi(
         val builder = request("/api/hermes/tts/synthesize", "POST", body, profile).newBuilder()
             .header("Accept", "audio/mpeg")
         client.newCall(builder.build()).execute().use { response ->
-            val bytes = response.body?.bytes().orEmpty()
+            val bytes = response.body?.bytes() ?: byteArrayOf()
             if (!response.isSuccessful) throw HermesException("HTTP ${response.code}", response.code)
             if (bytes.isEmpty()) throw HermesException("The voice provider returned no audio")
             return bytes
