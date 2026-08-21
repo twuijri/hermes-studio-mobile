@@ -129,7 +129,7 @@ final class APIClient: @unchecked Sendable {
         ].filter { $0.value != nil }
         let query = components.percentEncodedQuery ?? "profile=\(profile.urlEncoded)"
         let root = try await object("/api/hermes/sessions/context-length?\(query)", profile: profile)
-        let length = root.int("context_length", "contextLength")
+        let length = root["context_length"] == nil ? root.int("contextLength") : root.int("context_length")
         guard length > 0 else { throw HermesError.malformedResponse }
         return length
     }
