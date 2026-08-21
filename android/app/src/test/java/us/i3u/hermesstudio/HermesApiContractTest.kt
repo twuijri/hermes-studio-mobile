@@ -174,7 +174,7 @@ class HermesApiContractTest {
     }
 
     @Test
-    fun `speech synthesis requests and preserves Groq wav audio`() {
+    fun `speech synthesis negotiates and preserves provider audio`() {
         val wav = "RIFF1234WAVEfmt ".toByteArray()
         server.enqueue(
             MockResponse()
@@ -190,8 +190,8 @@ class HermesApiContractTest {
         assertTrue(wav.contentEquals(audio.bytes))
         val request = server.takeRequest()
         assertEquals("/api/hermes/tts/synthesize", request.path)
-        assertEquals("audio/wav, audio/*", request.getHeader("Accept"))
-        assertEquals("wav", JSONObject(request.body.readUtf8()).getJSONObject("options").getString("format"))
+        assertEquals("audio/*", request.getHeader("Accept"))
+        assertFalse(JSONObject(request.body.readUtf8()).getJSONObject("options").has("format"))
     }
 
     @Test

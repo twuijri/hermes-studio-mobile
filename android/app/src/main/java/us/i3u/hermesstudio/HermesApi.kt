@@ -1292,12 +1292,12 @@ class HermesApi(
 
     /** Turns an assistant reply into audio using the profile's Studio TTS settings. */
     fun synthesize(profile: String, text: String): SynthesizedAudio {
-        // Groq Orpheus only produces WAV. Asking Studio for WAV avoids its
-        // failed MP3 attempt/fallback and ensures the returned bytes match the
-        // format Android is asked to decode.
-        val body = JSONObject().put("text", text).put("options", JSONObject().put("format", "wav"))
+        // Do not force a codec: Studio negotiates the format supported by the
+        // active provider (for example WAV for Groq Orpheus), while the client
+        // identifies the returned bytes before choosing the local extension.
+        val body = JSONObject().put("text", text).put("options", JSONObject())
         val builder = request("/api/hermes/tts/synthesize", "POST", body, profile).newBuilder()
-            .header("Accept", "audio/wav, audio/*")
+            .header("Accept", "audio/*")
         client.newCall(builder.build()).execute().use { response ->
             val bytes = response.body?.bytes() ?: byteArrayOf()
             if (!response.isSuccessful) throw HermesException("HTTP ${response.code}", response.code)
@@ -1313,8 +1313,10 @@ class HermesApi(
             val detectedMime = when {
                 bytes.size >= 12 && bytes.copyOfRange(0, 4).toString(Charsets.US_ASCII) == "RIFF" -> "audio/wav"
                 bytes.size >= 4 && bytes.copyOfRange(0, 4).toString(Charsets.US_ASCII) == "OggS" -> "audio/ogg"
+                bytes.size >= 4 && bytes.copyOfRange(0, 4).toString(Charsets.US_ASCII) == "fLaC" -> "audio/flac"
                 bytes.size >= 8 && bytes.copyOfRange(4, 8).toString(Charsets.US_ASCII) == "ftyp" -> "audio/mp4"
                 bytes.size >= 3 && bytes.copyOfRange(0, 3).toString(Charsets.US_ASCII) == "ID3" -> "audio/mpeg"
+                bytes.size >= 2 && (bytes[0].toInt() and 0xff) == 0xff && (bytes[1].toInt() and 0xf0) == 0xf0 -> "audio/aac"
                 else -> declaredMime.takeIf { it.startsWith("audio/") } ?: "audio/mpeg"
             }
             return SynthesizedAudio(bytes, detectedMime)
@@ -1659,6 +1661,8 @@ data class SynthesizedAudio(val bytes: ByteArray, val mime: String) {
         "audio/ogg", "audio/opus" -> ".ogg"
         "audio/mp4", "audio/m4a", "audio/x-m4a" -> ".m4a"
         "audio/aac" -> ".aac"
+        "audio/flac", "audio/x-flac" -> ".flac"
+        "audio/webm" -> ".webm"
         else -> ".mp3"
     }
 }

@@ -362,12 +362,11 @@ final class APIClient: @unchecked Sendable {
         var request = URLRequest(url: try url("/api/hermes/tts/synthesize"))
         request.httpMethod = "POST"
         request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        // Groq Orpheus only returns WAV. Request its native format so Studio
-        // does not first attempt MP3 and AVAudioPlayer receives matching data.
-        request.setValue("audio/wav, audio/*", forHTTPHeaderField: "Accept")
+        // Let Studio negotiate the active provider's native audio format.
+        request.setValue("audio/*", forHTTPHeaderField: "Accept")
         request.setValue(profile, forHTTPHeaderField: "X-Hermes-Profile")
         if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "options": ["format": "wav"]])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "options": [:]])
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw HermesError.http((response as? HTTPURLResponse)?.statusCode ?? -1, Self.errorDetail(data))
