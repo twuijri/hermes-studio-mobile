@@ -1299,6 +1299,13 @@ class HermesApi(
             val bytes = response.body?.bytes() ?: byteArrayOf()
             if (!response.isSuccessful) throw HermesException("HTTP ${response.code}", response.code)
             if (bytes.isEmpty()) throw HermesException("The voice provider returned no audio")
+            // Some Studio/provider failures arrive as a JSON body with HTTP 200.
+            // Passing that body to MediaPlayer used to throw during prepare().
+            val contentType = response.header("Content-Type").orEmpty().lowercase()
+            if (contentType.contains("json") || bytes.firstOrNull()?.toInt()?.toChar() == '{') {
+                val detail = runCatching { errorDetail(bytes.toString(Charsets.UTF_8)) }.getOrNull()
+                throw HermesException(detail?.takeIf { it.isNotBlank() } ?: "The voice provider returned invalid audio")
+            }
             return bytes
         }
     }

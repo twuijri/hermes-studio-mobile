@@ -995,7 +995,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun consumeTranscript() = _state.update { it.copy(transcript = null) }
 
     fun stopSpeaking() {
-        speechPlayer?.release()
+        runCatching { speechPlayer?.stop() }
+        runCatching { speechPlayer?.release() }
         speechPlayer = null
         _state.update { it.copy(speaking = false) }
     }
@@ -1009,17 +1010,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     file
                 }
             }.onSuccess { file ->
-                stopSpeaking()
-                speechPlayer = MediaPlayer().apply {
-                    setDataSource(file.absolutePath)
-                    setOnCompletionListener { player -> player.release(); speechPlayer = null; file.delete(); _state.update { it.copy(speaking = false) } }
-                    setOnErrorListener { player, _, _ -> player.release(); speechPlayer = null; file.delete(); _state.update { it.copy(speaking = false) }; true }
-                    prepare()
-                    start()
+                runCatching {
+                    stopSpeaking()
+                    MediaPlayer().also { player ->
+                        speechPlayer = player
+                        player.setDataSource(file.absolutePath)
+                        player.setOnPreparedListener { ready ->
+                            runCatching { ready.start() }
+                                .onSuccess { _state.update { it.copy(speaking = true) } }
+                                .onFailure { stopSpeaking(); file.delete(); _state.update { it.copy(error = it.error ?: str(R.string.voice_playback_failed)) } }
+                        }
+                        player.setOnCompletionListener { finished ->
+                            runCatching { finished.release() }
+                            if (speechPlayer === finished) speechPlayer = null
+                            file.delete()
+                            _state.update { it.copy(speaking = false) }
+                        }
+                        player.setOnErrorListener { failed, _, _ ->
+                            runCatching { failed.release() }
+                            if (speechPlayer === failed) speechPlayer = null
+                            file.delete()
+                            _state.update { it.copy(speaking = false, error = str(R.string.voice_playback_failed)) }
+                            true
+                        }
+                        player.prepareAsync()
+                    }
+                }.onFailure {
+                    stopSpeaking()
+                    file.delete()
+                    _state.update { state -> state.copy(error = str(R.string.voice_playback_failed)) }
                 }
-                _state.update { it.copy(speaking = true) }
             }.onFailure { failure -> _state.update { it.copy(speaking = false, error = failure.readableMessage(localized)) } }
         }
+    }
+
+    override fun onCleared() {
+        stopSpeaking()
+        super.onCleared()
     }
 
     // ── model and reasoning ───────────────────────────────────────────────

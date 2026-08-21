@@ -708,4 +708,5 @@
     <string name="insights_workers">عمّال الجسر</string>
     <string name="insights_live_sessions">الجلسات النشطة</string>
     <string name="voice_stop_reply">إيقاف الصوت</string>
+    <string name="voice_playback_failed">تعذّر تشغيل الرد الصوتي. تحقق من مزوّد TTS في الاستديو.</string>
 </resources>
