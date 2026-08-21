@@ -165,6 +165,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -184,10 +186,58 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun App(viewModel: AppViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var availableUpdate by remember { mutableStateOf<AvailableUpdate?>(null) }
+    var downloadingUpdate by remember { mutableStateOf(false) }
+    var updateError by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(Unit) { availableUpdate = runCatching { AppUpdater.check() }.getOrNull() }
 
     HermesTheme(appearance = state.appearance) {
         Surface(modifier = Modifier.fillMaxSize()) {
             AppContent(state, viewModel)
+        }
+        availableUpdate?.let { update ->
+            AlertDialog(
+                onDismissRequest = { if (!downloadingUpdate) availableUpdate = null },
+                title = { Text(stringResource(R.string.update_available_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            updateError ?: if (downloadingUpdate) R.string.update_downloading else R.string.update_available_body,
+                        ),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !downloadingUpdate,
+                        onClick = {
+                            scope.launch {
+                                downloadingUpdate = true
+                                updateError = null
+                                runCatching { AppUpdater.download(context, update) }
+                                    .onSuccess { apk ->
+                                        downloadingUpdate = false
+                                        if (AppUpdater.install(context, apk) == InstallResult.PermissionRequired) {
+                                            updateError = R.string.update_permission
+                                        }
+                                    }
+                                    .onFailure {
+                                        downloadingUpdate = false
+                                        updateError = R.string.update_failed
+                                    }
+                            }
+                        },
+                    ) { Text(stringResource(R.string.update_install)) }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !downloadingUpdate,
+                        onClick = { availableUpdate = null },
+                    ) { Text(stringResource(R.string.update_later)) }
+                },
+            )
         }
     }
 }

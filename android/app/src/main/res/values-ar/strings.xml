@@ -178,6 +178,13 @@
     <string name="settings_reasoning_note">تُختار قوة التفكير لكل محادثة من زر + في صندوق الكتابة.</string>
     <string name="settings_sign_out_note">يحذف الرمز المحفوظ من هذا الجهاز</string>
     <string name="settings_version">الإصدار</string>
+    <string name="update_available_title">يتوفر تحديث جديد</string>
+    <string name="update_available_body">توجد نسخة أندرويد أحدث على GitHub. هل تريد تنزيلها وتثبيتها الآن؟</string>
+    <string name="update_install">حدّث الآن</string>
+    <string name="update_later">لاحقًا</string>
+    <string name="update_downloading">جارٍ تنزيل التحديث…</string>
+    <string name="update_failed">تعذّر تنزيل التحديث</string>
+    <string name="update_permission">اسمح بالتحديث من Hermes Studio، ثم ارجع واضغط «حدّث الآن» مرة أخرى.</string>
     <string name="settings_about_note">تطبيق مجتمعي غير رسمي لهرمز استديو. الصور الرمزية المولّدة من Multiavatar.com.</string>
     <string name="settings_phone_name">هرمز استديو موبايل</string>
     <string name="settings_phone_github">هرمز استديو موبايل</string>

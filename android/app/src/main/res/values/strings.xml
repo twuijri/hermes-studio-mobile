@@ -179,6 +179,13 @@
     <string name="settings_reasoning_note">Reasoning effort is chosen per conversation from the + menu in the composer.</string>
     <string name="settings_sign_out_note">Removes the stored token from this device</string>
     <string name="settings_version">Version</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_body">A newer Android build is ready on GitHub. Download and install it now?</string>
+    <string name="update_install">Update now</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_failed">Could not download the update</string>
+    <string name="update_permission">Allow updates from Hermes Studio, then return and tap Update now again.</string>
     <string name="settings_about_note">Unofficial community client for Hermes Studio. Generated profile pictures: avatars by Multiavatar.com.</string>
     <string name="settings_phone_name">Hermes Studio Mobile</string>
     <string name="settings_phone_github">Hermes Studio Mobile</string>

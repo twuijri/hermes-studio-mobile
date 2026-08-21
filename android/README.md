@@ -114,6 +114,11 @@ Every push to `main` rebuilds that release, so the link always points at the new
 build, and each build is signed with the same project key so it installs straight over
 the previous version.
 
+GitHub-built copies also check that rolling release at launch. When its published
+commit differs from the installed build, the app offers to download the APK and
+hands it to Android's package installer. Android still requires the user to approve
+the installation and to allow this app as an update source once.
+
 > Installed a build from before 2026-07-30? Uninstall the old app once, then install
 > this one. Those builds were signed with a throwaway key that CI regenerated on every
 > run, which is why Android refused to update them in place.

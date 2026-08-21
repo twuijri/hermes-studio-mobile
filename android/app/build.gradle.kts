@@ -13,6 +13,7 @@ val keystorePath: String? = System.getenv("ANDROID_KEYSTORE_PATH")
 val keystorePassword: String? = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 val keystoreAlias: String? = System.getenv("ANDROID_KEY_ALIAS")
 val hasSigningKey = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
+val buildCommit = System.getenv("GITHUB_SHA")?.takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) } ?: "local"
 
 android {
     namespace = "us.i3u.hermesstudio"
@@ -24,6 +25,7 @@ android {
         targetSdk = 35
         versionCode = 32
         versionName = "1.2.0"
+        buildConfigField("String", "BUILD_COMMIT", "\"$buildCommit\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
