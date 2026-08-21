@@ -90,7 +90,6 @@ struct ConversationView: View {
             }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.bottom, 8)
         }.padding(.top, 9).background(.ultraThinMaterial)
     }
-    }
 
     private func reload() async {
         loading = true
