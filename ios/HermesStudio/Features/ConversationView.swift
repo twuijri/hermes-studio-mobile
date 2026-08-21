@@ -74,7 +74,17 @@ struct ConversationView: View {
             }.padding(.horizontal, 10)
             HStack(spacing: 15) {
                 Menu { Button("Default") { store.setReasoning("") }; ForEach(["low", "medium", "high", "xhigh"], id: \.self) { value in Button(value.capitalized) { store.setReasoning(value) } } } label: { Label(store.reasoningEffort.nilIfEmpty?.capitalized ?? String(localized: "Default"), systemImage: "brain.head.profile") }
-                Menu { ForEach(models) { model in Button(model.name) { selectedModel = model.id; selectedProvider = model.provider; Task { await refreshContextWindow() } } } label: { Label(selectedModel.nilIfEmpty ?? session.model.nilIfEmpty ?? String(localized: "Model"), systemImage: "cpu") }
+                Menu {
+                    ForEach(models) { model in
+                        Button(model.name) {
+                            selectedModel = model.id
+                            selectedProvider = model.provider
+                            Task { await refreshContextWindow() }
+                        }
+                    }
+                } label: {
+                    Label(selectedModel.nilIfEmpty ?? session.model.nilIfEmpty ?? String(localized: "Model"), systemImage: "cpu")
+                }
                 Spacer()
                 ContextUsageView(tokens: contextTokens, window: contextWindow, loading: loadingContext)
             }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.bottom, 8)
