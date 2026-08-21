@@ -1005,8 +1005,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val file = java.io.File.createTempFile("hermes-reply-", ".mp3", getApplication<Application>().cacheDir)
-                    file.writeBytes(api.synthesize(profile, text))
+                    val audio = api.synthesize(profile, text)
+                    val file = java.io.File.createTempFile("hermes-reply-", audio.extension, getApplication<Application>().cacheDir)
+                    file.writeBytes(audio.bytes)
                     file
                 }
             }.onSuccess { file ->

@@ -1291,7 +1291,7 @@ class HermesApi(
     }
 
     /** Turns an assistant reply into MP3 using the profile's Studio TTS settings. */
-    fun synthesize(profile: String, text: String): ByteArray {
+    fun synthesize(profile: String, text: String): SynthesizedAudio {
         val body = JSONObject().put("text", text).put("options", JSONObject().put("format", "mp3"))
         val builder = request("/api/hermes/tts/synthesize", "POST", body, profile).newBuilder()
             .header("Accept", "audio/mpeg")
@@ -1306,7 +1306,15 @@ class HermesApi(
                 val detail = runCatching { errorDetail(bytes.toString(Charsets.UTF_8)) }.getOrNull()
                 throw HermesException(detail?.takeIf { it.isNotBlank() } ?: "The voice provider returned invalid audio")
             }
-            return bytes
+            val declaredMime = contentType.substringBefore(';')
+            val detectedMime = when {
+                bytes.size >= 12 && bytes.copyOfRange(0, 4).toString(Charsets.US_ASCII) == "RIFF" -> "audio/wav"
+                bytes.size >= 4 && bytes.copyOfRange(0, 4).toString(Charsets.US_ASCII) == "OggS" -> "audio/ogg"
+                bytes.size >= 8 && bytes.copyOfRange(4, 8).toString(Charsets.US_ASCII) == "ftyp" -> "audio/mp4"
+                bytes.size >= 3 && bytes.copyOfRange(0, 3).toString(Charsets.US_ASCII) == "ID3" -> "audio/mpeg"
+                else -> declaredMime.takeIf { it.startsWith("audio/") } ?: "audio/mpeg"
+            }
+            return SynthesizedAudio(bytes, detectedMime)
         }
     }
 
@@ -1641,6 +1649,16 @@ data class Upload(
     val path: String,
     val mime: String,
 )
+
+data class SynthesizedAudio(val bytes: ByteArray, val mime: String) {
+    val extension: String get() = when (mime.lowercase()) {
+        "audio/wav", "audio/x-wav" -> ".wav"
+        "audio/ogg", "audio/opus" -> ".ogg"
+        "audio/mp4", "audio/m4a", "audio/x-m4a" -> ".m4a"
+        "audio/aac" -> ".aac"
+        else -> ".mp3"
+    }
+}
 
 data class Message(
     val id: String,
