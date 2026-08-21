@@ -174,6 +174,27 @@ class HermesApiContractTest {
     }
 
     @Test
+    fun `speech synthesis requests and preserves Groq wav audio`() {
+        val wav = "RIFF1234WAVEfmt ".toByteArray()
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "audio/wav")
+                .setBody(okio.Buffer().write(wav)),
+        )
+
+        val audio = api.synthesize("default", "هلا والله")
+
+        assertEquals("audio/wav", audio.mime)
+        assertEquals(".wav", audio.extension)
+        assertTrue(wav.contentEquals(audio.bytes))
+        val request = server.takeRequest()
+        assertEquals("/api/hermes/tts/synthesize", request.path)
+        assertEquals("audio/wav, audio/*", request.getHeader("Accept"))
+        assertEquals("wav", JSONObject(request.body.readUtf8()).getJSONObject("options").getString("format"))
+    }
+
+    @Test
     fun `first run model and provider reach the REST fallback`() {
         enqueue("""{"ok":true,"output":"done","session_id":"session-1"}""")
 

@@ -1290,11 +1290,14 @@ class HermesApi(
             ?: throw HermesException("The provider returned no text")
     }
 
-    /** Turns an assistant reply into MP3 using the profile's Studio TTS settings. */
+    /** Turns an assistant reply into audio using the profile's Studio TTS settings. */
     fun synthesize(profile: String, text: String): SynthesizedAudio {
-        val body = JSONObject().put("text", text).put("options", JSONObject().put("format", "mp3"))
+        // Groq Orpheus only produces WAV. Asking Studio for WAV avoids its
+        // failed MP3 attempt/fallback and ensures the returned bytes match the
+        // format Android is asked to decode.
+        val body = JSONObject().put("text", text).put("options", JSONObject().put("format", "wav"))
         val builder = request("/api/hermes/tts/synthesize", "POST", body, profile).newBuilder()
-            .header("Accept", "audio/mpeg")
+            .header("Accept", "audio/wav, audio/*")
         client.newCall(builder.build()).execute().use { response ->
             val bytes = response.body?.bytes() ?: byteArrayOf()
             if (!response.isSuccessful) throw HermesException("HTTP ${response.code}", response.code)
