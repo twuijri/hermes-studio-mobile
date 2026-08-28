@@ -10,6 +10,7 @@
     <!-- إجراءات وتسميات مشتركة -->
     <string name="action_back">رجوع</string>
     <string name="action_refresh">تحديث</string>
+    <string name="conversation_jump_latest">الانتقال إلى آخر رسالة</string>
     <string name="action_dismiss">تجاهل</string>
     <string name="action_cancel">إلغاء</string>
     <string name="action_ok">حسنًا</string>

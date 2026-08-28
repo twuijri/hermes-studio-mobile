@@ -22,17 +22,36 @@ struct ConversationView: View {
     @StateObject private var recorder = VoiceRecorder()
     @StateObject private var speechPlayer = SpeechPlayer()
     @State private var voiceReplyPending = false
+    @State private var bottomVisible = true
     @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { reader in
-                ScrollView {
-                    LazyVStack(spacing: 14) {
-                        if loading { ProgressView().padding(.top, 40) }
-                        ForEach(lines) { line in MessageBubble(line: line, profile: profile, api: store.api, sessionProfile: session.profile).id(line.id) }
-                        Color.clear.frame(height: 1).id("bottom")
-                    }.padding(.horizontal, 12).padding(.vertical, 16)
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            if loading { ProgressView().padding(.top, 40) }
+                            ForEach(lines) { line in MessageBubble(line: line, profile: profile, api: store.api, sessionProfile: session.profile).id(line.id) }
+                            Color.clear.frame(height: 1).id("bottom")
+                                .onAppear { bottomVisible = true }
+                                .onDisappear { bottomVisible = false }
+                        }.padding(.horizontal, 12).padding(.vertical, 16)
+                    }
+                    if !bottomVisible && !lines.isEmpty {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.25)) { reader.scrollTo("bottom", anchor: .bottom) }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.headline.weight(.semibold))
+                                .frame(width: 46, height: 46)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Jump to latest message")
+                        .padding(14)
+                    }
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .refreshable { await reload() }

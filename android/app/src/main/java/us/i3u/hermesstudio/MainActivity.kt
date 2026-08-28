@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
@@ -886,6 +887,7 @@ private fun RoomScreen(state: UiState, viewModel: AppViewModel) {
 private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
     var draft by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val conversationKey = state.openSession?.id ?: "new"
     var reachedInitialBottom by remember(conversationKey) { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1016,6 +1018,31 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
                     backgroundColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.primary,
                 )
+                if (reachedInitialBottom && listState.canScrollForward && state.lines.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(14.dp)
+                            .size(46.dp)
+                            .clickable {
+                                scope.launch {
+                                    listState.animateScrollToItem(state.lines.lastIndex, Int.MAX_VALUE / 2)
+                                }
+                            },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        tonalElevation = 5.dp,
+                        shadowElevation = 5.dp,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowDown,
+                                contentDescription = stringResource(R.string.conversation_jump_latest),
+                            )
+                        }
+                    }
+                }
             }
 
             if (state.sending && state.lines.none { it.streaming }) {
