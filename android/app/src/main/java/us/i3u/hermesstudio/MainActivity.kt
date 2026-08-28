@@ -132,6 +132,7 @@ import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -166,6 +167,9 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -884,6 +888,20 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
     val listState = rememberLazyListState()
     val conversationKey = state.openSession?.id ?: "new"
     var reachedInitialBottom by remember(conversationKey) { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // A run continues in Studio after the mobile stream is detached. Reload
+    // the server history whenever the app returns to the foreground so a reply
+    // completed while the user was away is shown immediately.
+    DisposableEffect(lifecycleOwner, conversationKey) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && state.openSession != null) {
+                viewModel.refreshConversation()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(conversationKey, state.loadingHistory, state.lines.size) {
         if (!state.loadingHistory && state.lines.isNotEmpty()) {

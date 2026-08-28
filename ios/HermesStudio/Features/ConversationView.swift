@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct ConversationView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.scenePhase) private var scenePhase
     let session: SessionSummary
     @State private var lines: [ChatLine] = []
     @State private var input = ""
@@ -51,6 +52,11 @@ struct ConversationView: View {
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in if case let .success(urls) = result { Task { await upload(urls) } } }
         .task { await loadModels() }
+        .onChange(of: scenePhase) { _, phase in
+            // Studio keeps running after the app is backgrounded. Pull the
+            // persisted history as soon as the conversation becomes visible.
+            if phase == .active { Task { await reload() } }
+        }
         .onDisappear { socket.close(); if recorder.isRecording { _ = recorder.stop() } }
     }
 
