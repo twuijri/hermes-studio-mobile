@@ -10,8 +10,16 @@
     <!-- إجراءات وتسميات مشتركة -->
     <string name="action_back">رجوع</string>
     <string name="action_refresh">تحديث</string>
+    <string name="message_actions">خيارات الرسالة</string>
+    <string name="message_copy">نسخ</string>
+    <string name="message_reply">رد</string>
+    <string name="message_fork">تفريع المحادثة</string>
+    <string name="message_replying">الرد على</string>
     <string name="skills_write_approval">موافقة تعديلات المهارات</string>
     <string name="skills_write_approval_note">طلب الموافقة قبل أن ينشئ الوكيل مهارة أو يعدّلها.</string>
+    <string name="skills_pending_approvals">موافقات المهارات المعلّقة (%1$d)</string>
+    <string name="skills_approve">موافقة</string>
+    <string name="skills_reject">رفض</string>
     <string name="conversation_jump_latest">الانتقال إلى آخر رسالة</string>
     <string name="action_dismiss">تجاهل</string>
     <string name="action_cancel">إلغاء</string>

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ConversationView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
     let session: SessionSummary
     @State private var lines: [ChatLine] = []
     @State private var input = ""
@@ -23,6 +24,8 @@ struct ConversationView: View {
     @StateObject private var speechPlayer = SpeechPlayer()
     @State private var voiceReplyPending = false
     @State private var bottomVisible = true
+    @State private var actionLine: ChatLine?
+    @State private var replyingTo: ChatLine?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -32,7 +35,7 @@ struct ConversationView: View {
                     ScrollView {
                         LazyVStack(spacing: 14) {
                             if loading { ProgressView().padding(.top, 40) }
-                            ForEach(lines) { line in MessageBubble(line: line, profile: profile, api: store.api, sessionProfile: session.profile).id(line.id) }
+                            ForEach(lines) { line in MessageBubble(line: line, profile: profile, api: store.api, sessionProfile: session.profile) { actionLine = line }.id(line.id) }
                             Color.clear.frame(height: 1).id("bottom")
                                 .onAppear { bottomVisible = true }
                                 .onDisappear { bottomVisible = false }
@@ -63,11 +66,32 @@ struct ConversationView: View {
         .background(Color(uiColor: .systemBackground))
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .tabBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                HStack(spacing: 9) { ProfileAvatar(name: session.profile, avatar: profile?.avatar, size: 34); VStack(alignment: .leading, spacing: 1) { Text(session.title).font(.subheadline.weight(.semibold)).lineLimit(1); Text("\(session.profile) · \(selectedModel.nilIfEmpty ?? session.model)").font(.caption2).foregroundStyle(.secondary).lineLimit(1) } }
+            ToolbarItem(placement: .topBarLeading) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.backward").frame(width: 38, height: 38).background(.ultraThinMaterial, in: Circle())
+                }.buttonStyle(.plain)
             }
-            ToolbarItem(placement: .topBarTrailing) { Button { Task { await reload() } } label: { Image(systemName: "arrow.clockwise") } }
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 7) { ProfileAvatar(name: session.profile, avatar: profile?.avatar, size: 27); Text(session.title).font(.subheadline.weight(.semibold)).lineLimit(1) }
+                    .padding(.horizontal, 12).frame(height: 38).background(.ultraThinMaterial, in: Capsule())
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { Task { await reload() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    Button { newConversation() } label: { Label("New conversation", systemImage: "plus.bubble") }
+                    Button { input = "/fork"; send() } label: { Label("Fork conversation", systemImage: "arrow.triangle.branch") }
+                } label: { Image(systemName: "ellipsis").frame(width: 38, height: 38).background(.ultraThinMaterial, in: Circle()) }
+            }
+        }
+        .confirmationDialog("Message actions", isPresented: Binding(get: { actionLine != nil }, set: { if !$0 { actionLine = nil } }), presenting: actionLine) { line in
+            Button("Copy") { UIPasteboard.general.string = line.text; actionLine = nil }
+            Button("Reply") { replyingTo = line; inputFocused = true; actionLine = nil }
+            Button("Fork conversation") { actionLine = nil; input = "/fork"; send() }
+            Button("Cancel", role: .cancel) { actionLine = nil }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in if case let .success(urls) = result { Task { await upload(urls) } } }
         .task { await loadModels() }
@@ -83,6 +107,12 @@ struct ConversationView: View {
 
     private var composer: some View {
         VStack(spacing: 9) {
+            if let replyingTo {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) { Text("Replying to").font(.caption.weight(.semibold)).foregroundStyle(HermesTheme.purple); Text(replyingTo.text).font(.caption).lineLimit(2) }
+                    Spacer(); Button { self.replyingTo = nil } label: { Image(systemName: "xmark.circle.fill") }
+                }.padding(10).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14)).padding(.horizontal, 10)
+            }
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(attachments) { item in HStack(spacing: 6) { Image(systemName: item.mime.hasPrefix("image/") ? "photo" : "doc"); Text(item.name).lineLimit(1); Button { attachments.removeAll { $0.id == item.id } } label: { Image(systemName: "xmark.circle.fill") } }.font(.caption).padding(8).background(.thinMaterial, in: Capsule()) } }.padding(.horizontal, 12) }
             }
@@ -99,6 +129,7 @@ struct ConversationView: View {
                     Button(action: send) { Image(systemName: sending ? "stop.fill" : "arrow.up").font(.headline).foregroundStyle(.white).frame(width: 44, height: 44).background((sending ? Color.red : HermesTheme.purple).gradient, in: Circle()) }
                 }
             }.padding(.horizontal, 10)
+            if inputFocused || !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty {
             HStack(spacing: 15) {
                 Menu { Button("Default") { store.setReasoning("") }; ForEach(["low", "medium", "high", "xhigh"], id: \.self) { value in Button(value.capitalized) { store.setReasoning(value) } } } label: { Label(store.reasoningEffort.nilIfEmpty?.capitalized ?? String(localized: "Default"), systemImage: "brain.head.profile") }
                 Menu {
@@ -118,6 +149,7 @@ struct ConversationView: View {
                 }
                 ContextUsageView(tokens: contextTokens, window: contextWindow, loading: loadingContext)
             }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.bottom, 8)
+            }
         }.padding(.top, 9).background(.ultraThinMaterial)
     }
 
@@ -147,7 +179,12 @@ struct ConversationView: View {
 
     private func send() {
         if sending { socket.abort(sessionID: session.id); socket.close(); sending = false; if let index = lines.indices.last { lines[index].isStreaming = false; lines[index].finishedAt = .now }; return }
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty || !attachments.isEmpty else { return }
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty || !attachments.isEmpty else { return }
+        if let replyingTo {
+            let quote = replyingTo.text.split(separator: "\n", omittingEmptySubsequences: false).prefix(8).map { "> \($0)" }.joined(separator: "\n")
+            text = [quote, text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            self.replyingTo = nil
+        }
         let wantsVoiceReply = voiceReplyPending; voiceReplyPending = false
         let files = attachments; input = ""; attachments = []; inputFocused = false
         lines.append(ChatLine(text: text.isEmpty ? files.map(\.name).joined(separator: ", ") : text, fromUser: true))
@@ -245,6 +282,7 @@ private struct MessageBubble: View {
     let profile: Profile?
     let api: APIClient
     let sessionProfile: String
+    let onTap: () -> Void
     @State private var reasoningExpanded = true
     var body: some View {
         let parsed = ChatFiles.parse(line.text)
@@ -273,7 +311,7 @@ private struct MessageBubble: View {
             .background(line.fromUser ? HermesTheme.purple.opacity(0.17) : Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 21, style: .continuous))
             .frame(maxWidth: line.fromUser ? 560 : .infinity, alignment: .leading)
             if !line.fromUser { Spacer(minLength: 24) }
-        }.frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity).contentShape(Rectangle()).onTapGesture(perform: onTap)
     }
 }
 

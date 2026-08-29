@@ -3,19 +3,24 @@ import SwiftUI
 struct SkillsView: View {
     @EnvironmentObject private var store: AppStore
     @State private var skills: [SkillItem] = []
+    @State private var pendingWrites: [PendingSkillWrite] = []
+    @State private var resolvingWrite = ""
     @State private var search = ""; @State private var loading = true
     var body: some View {
         List {
             Section { SearchBar(text: $search).listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden) }
-            Section("Approvals") {
-                NavigationLink { StudioSectionSettings(section: .skills) } label: {
-                    Label {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Approve skill changes")
-                            Text("Require approval before the agent creates or modifies skills.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    } icon: { Image(systemName: "checkmark.shield.fill").foregroundStyle(.green) }
+            if !pendingWrites.isEmpty {
+                Section("Pending skill approvals (\(pendingWrites.count))") {
+                    ForEach(pendingWrites) { pending in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(pending.summary.isEmpty ? pending.id : pending.summary).font(.headline)
+                            Text([pending.action, pending.origin].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Approve") { Task { await resolve(pending, approve: true) } }.buttonStyle(.borderedProminent).tint(.green)
+                                Button("Reject", role: .destructive) { Task { await resolve(pending, approve: false) } }.buttonStyle(.bordered)
+                            }.disabled(!resolvingWrite.isEmpty)
+                        }.padding(.vertical, 4)
+                    }
                 }
             }
             ForEach(categories, id: \.self) { category in
@@ -31,7 +36,8 @@ struct SkillsView: View {
     }
     private var filtered: [SkillItem] { search.isEmpty ? skills : skills.filter { $0.name.localizedCaseInsensitiveContains(search) || $0.description.localizedCaseInsensitiveContains(search) } }
     private var categories: [String] { Array(Set(filtered.map(\.category))).sorted() }
-    private func load() async { loading = true; do { skills = try await store.api.skills(profile: store.selectedProfile) } catch { store.errorMessage = error.localizedDescription }; loading = false }
+    private func load() async { loading = true; do { async let skillsRequest = store.api.skills(profile: store.selectedProfile); async let approvalsRequest = store.api.pendingSkillWrites(profile: store.selectedProfile); skills = try await skillsRequest; pendingWrites = try await approvalsRequest } catch { store.errorMessage = error.localizedDescription }; loading = false }
+    private func resolve(_ pending: PendingSkillWrite, approve: Bool) async { resolvingWrite = pending.id; do { try await store.api.resolvePendingSkillWrite(pending.id, approve: approve, profile: store.selectedProfile); await load() } catch { store.errorMessage = error.localizedDescription }; resolvingWrite = "" }
     private func toggle(_ skill: SkillItem) async { do { try await store.api.toggleSkill(skill, profile: store.selectedProfile); await load() } catch { store.errorMessage = error.localizedDescription } }
     private func pin(_ skill: SkillItem) async { do { try await store.api.pinSkill(skill, profile: store.selectedProfile); await load() } catch { store.errorMessage = error.localizedDescription } }
 }

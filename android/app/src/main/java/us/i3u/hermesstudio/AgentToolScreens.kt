@@ -27,7 +27,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Approval
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.CheckCircle
@@ -135,30 +134,31 @@ internal fun SkillsScreen(state: UiState, viewModel: AppViewModel) {
             if (skills.loading) LoadingRow()
             state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
             state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
-            state.studioSettings?.session?.let { session ->
+            if (skills.pendingWrites.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.skills_pending_approvals, skills.pendingWrites.size),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                )
+            }
+            skills.pendingWrites.take(3).forEach { pending ->
                 Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Icon(Icons.Filled.Approval, null, tint = MaterialTheme.colorScheme.primary)
-                        Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.skills_write_approval), fontWeight = FontWeight.SemiBold)
-                            Text(
-                                stringResource(R.string.skills_write_approval_note),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text(pending.summary.ifBlank { pending.id }, fontWeight = FontWeight.SemiBold)
+                        Text(listOf(pending.action, pending.origin).filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { viewModel.resolvePendingSkillWrite(pending.id, true) },
+                                enabled = skills.resolvingWriteId == null,
+                            ) { Text(stringResource(R.string.skills_approve)) }
+                            OutlinedButton(
+                                onClick = { viewModel.resolvePendingSkillWrite(pending.id, false) },
+                                enabled = skills.resolvingWriteId == null,
+                            ) { Text(stringResource(R.string.skills_reject)) }
                         }
-                        Switch(
-                            checked = session.skillsWriteApproval,
-                            onCheckedChange = { viewModel.setStudioValue("skills", "write_approval", it) },
-                            enabled = !state.savingSetting,
-                        )
                     }
                 }
             }

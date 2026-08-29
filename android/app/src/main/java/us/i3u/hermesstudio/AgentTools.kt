@@ -129,6 +129,17 @@ data class SkillsUiState(
     val target: String = "hermes",
     val categories: List<SkillCategory> = emptyList(),
     val openSkill: OpenSkill? = null,
+    val pendingWrites: List<PendingSkillWrite> = emptyList(),
+    val resolvingWriteId: String? = null,
+)
+
+data class PendingSkillWrite(
+    val id: String,
+    val subsystem: String,
+    val action: String,
+    val summary: String,
+    val origin: String,
+    val createdAt: Long?,
 )
 
 data class PluginsUiState(

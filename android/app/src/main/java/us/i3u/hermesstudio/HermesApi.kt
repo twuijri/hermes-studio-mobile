@@ -618,6 +618,30 @@ class HermesApi(
     fun messages(sessionId: String, humanOnly: Boolean = true): List<Message> =
         conversationHistory(sessionId, humanOnly).messages
 
+    fun pendingSkillWrites(profile: String): List<PendingSkillWrite> {
+        val records = call("/api/hermes/write-gate/pending", profile = profile).optJSONArray("records") ?: JSONArray()
+        return (0 until records.length()).mapNotNull { index ->
+            val item = records.optJSONObject(index) ?: return@mapNotNull null
+            if (item.optString("subsystem") != "skills") return@mapNotNull null
+            PendingSkillWrite(
+                id = item.optString("id"),
+                subsystem = "skills",
+                action = item.optString("action"),
+                summary = item.optString("summary"),
+                origin = item.optString("origin"),
+                createdAt = item.optLong("created_at").takeIf { it > 0 },
+            )
+        }.filter { it.id.isNotBlank() }
+    }
+
+    fun resolvePendingSkillWrite(profile: String, id: String, approve: Boolean) {
+        call(
+            "/api/hermes/write-gate/pending/skills/${enc(id)}/${if (approve) "approve" else "reject"}",
+            method = "POST",
+            profile = profile,
+        )
+    }
+
     /** Maximum context window for the profile's currently selected model. */
     fun contextLength(profile: String, provider: String?, model: String?): Long {
         val query = listOfNotNull(

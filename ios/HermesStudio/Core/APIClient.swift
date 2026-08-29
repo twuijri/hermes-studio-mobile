@@ -290,6 +290,18 @@ final class APIClient: @unchecked Sendable {
     func adoptPet(_ id: String, profile: String) async throws { _ = try await object("/api/hermes/pets/adopt", method: "POST", body: ["slug": id]) }
     func setPet(_ id: String, profile: String, active: Bool) async throws { _ = try await object("/api/hermes/pets/active", method: "PATCH", body: ["enabled": active]) }
 
+    func pendingSkillWrites(profile: String) async throws -> [PendingSkillWrite] {
+        try await object("/api/hermes/write-gate/pending", profile: profile).objects("records")
+            .filter { $0.string("subsystem") == "skills" }
+            .map(PendingSkillWrite.init)
+            .filter { !$0.id.isEmpty }
+    }
+
+    func resolvePendingSkillWrite(_ id: String, approve: Bool, profile: String) async throws {
+        let action = approve ? "approve" : "reject"
+        _ = try await object("/api/hermes/write-gate/pending/skills/\(id.urlEncoded)/\(action)", method: "POST", profile: profile)
+    }
+
     func config(profile: String, section: String? = nil) async throws -> JSON {
         var path = "/api/hermes/config?profile=\(profile.urlEncoded)"
         if let section { path += "&section=\(section.urlEncoded)" }

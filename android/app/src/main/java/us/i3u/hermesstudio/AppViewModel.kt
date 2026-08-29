@@ -1499,7 +1499,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun openSkills() {
         _state.update { it.copy(screen = Screen.Skills, error = null, notice = null) }
         loadSkills()
-        loadStudioSettings()
     }
 
     fun selectSkillsTarget(target: String) {
@@ -1514,14 +1513,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val target = _state.value.skillsUi.target
         _state.update { it.copy(skillsUi = it.skillsUi.copy(loading = true)) }
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { api.skills(profile, target) } }
-                .onSuccess { categories ->
-                    _state.update { it.copy(skillsUi = it.skillsUi.copy(loading = false, categories = categories)) }
+            runCatching { withContext(Dispatchers.IO) { api.skills(profile, target) to api.pendingSkillWrites(profile) } }
+                .onSuccess { (categories, pendingWrites) ->
+                    _state.update { it.copy(skillsUi = it.skillsUi.copy(loading = false, resolvingWriteId = null, categories = categories, pendingWrites = pendingWrites)) }
                 }
                 .onFailure { failure ->
                     _state.update {
-                        it.copy(skillsUi = it.skillsUi.copy(loading = false), error = failure.readableMessage(localized))
+                        it.copy(skillsUi = it.skillsUi.copy(loading = false, resolvingWriteId = null), error = failure.readableMessage(localized))
                     }
+                }
+        }
+    }
+
+    fun resolvePendingSkillWrite(id: String, approve: Boolean) {
+        val profile = currentProfile()
+        _state.update { it.copy(skillsUi = it.skillsUi.copy(resolvingWriteId = id), error = null) }
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.resolvePendingSkillWrite(profile, id, approve) } }
+                .onSuccess { loadSkills() }
+                .onFailure { failure ->
+                    _state.update { it.copy(skillsUi = it.skillsUi.copy(resolvingWriteId = null), error = failure.readableMessage(localized)) }
                 }
         }
     }

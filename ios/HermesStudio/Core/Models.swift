@@ -208,6 +208,22 @@ struct ChatLine: Identifiable, Hashable {
     }
 }
 
+struct PendingSkillWrite: Identifiable, Hashable {
+    let id: String
+    let action: String
+    let summary: String
+    let origin: String
+    let createdAt: Int?
+
+    init(_ json: JSON) {
+        id = json.string("id")
+        action = json.string("action")
+        summary = json.string("summary")
+        origin = json.string("origin")
+        createdAt = json["created_at"] as? Int
+    }
+}
+
 struct ModelOption: Identifiable, Hashable {
     let id: String
     let name: String

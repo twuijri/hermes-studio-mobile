@@ -74,6 +74,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.ModelTraining
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Repeat
@@ -149,15 +150,18 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.FileProvider
 import java.io.File
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -882,12 +886,15 @@ private fun RoomScreen(state: UiState, viewModel: AppViewModel) {
 
 // ── conversation ─────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
     var draft by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    var actionLine by remember { mutableStateOf<ChatLine?>(null) }
+    var replyingTo by remember { mutableStateOf<ChatLine?>(null) }
     val conversationKey = state.openSession?.id ?: "new"
     var reachedInitialBottom by remember(conversationKey) { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -934,45 +941,39 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
         refreshing = state.loadingHistory,
         onRefresh = { viewModel.refreshConversation() },
     )
+    actionLine?.let { line ->
+        ModalBottomSheet(
+            onDismissRequest = { actionLine = null },
+            sheetState = rememberModalBottomSheetState(),
+        ) {
+            SheetTitle(stringResource(R.string.message_actions))
+            TextButton(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                onClick = {
+                    clipboard.setText(AnnotatedString(line.text))
+                    actionLine = null
+                },
+            ) { Text(stringResource(R.string.message_copy), modifier = Modifier.fillMaxWidth()) }
+            TextButton(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                onClick = { replyingTo = line; actionLine = null },
+            ) { Text(stringResource(R.string.message_reply), modifier = Modifier.fillMaxWidth()) }
+            TextButton(
+                enabled = !state.sending,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                onClick = { actionLine = null; viewModel.send("/fork") },
+            ) { Text(stringResource(R.string.message_fork), modifier = Modifier.fillMaxWidth()) }
+            Spacer(Modifier.height(18.dp))
+        }
+    }
     Scaffold(
         // The composer applies the IME inset itself. Scaffold's default system
         // bottom inset would otherwise be added above the keyboard as a second,
         // empty navigation-bar-sized strip.
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            StudioTopBar(
-                title = state.openSession?.title ?: stringResource(R.string.action_new_chat),
-                subtitle = listOfNotNull(profile.ifBlank { null }, state.openSession?.model)
-                    .joinToString(" · ")
-                    .ifBlank { null },
-                leading = {
-                    ProfileAvatar(profile.ifBlank { "default" }, avatar, size = 32.dp)
-                },
-                onBack = { viewModel.back() },
-                actions = {
-                    if (state.openSession != null) {
-                        IconButton(
-                            onClick = { viewModel.refreshConversation() },
-                            enabled = !state.loadingHistory,
-                        ) {
-                            Icon(
-                                Icons.Filled.Refresh,
-                                contentDescription = stringResource(R.string.action_refresh),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                    IconButton(onClick = { viewModel.startNewConversation() }) {
-                        Icon(
-                            Icons.Filled.Add,
-                            contentDescription = stringResource(R.string.action_new_chat),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                },
-            )
+            ConversationTopBar(state, profile, avatar, viewModel)
         },
-        bottomBar = { StudioTabs(state, viewModel) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -1004,6 +1005,7 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
                             line = line,
                             profile = profile.ifBlank { "default" },
                             avatar = avatar,
+                            onActions = { actionLine = line },
                             onDownload = { file ->
                                 viewModel.downloadChatFile(file, profile.ifBlank { "default" })
                             },
@@ -1063,13 +1065,29 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
             state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
             state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
 
+            replyingTo?.let { quoted ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.message_replying), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(quoted.text, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = { replyingTo = null }) { Icon(Icons.Filled.Close, stringResource(R.string.action_cancel)) }
+                    }
+                }
+            }
             Composer(
                 state = state,
                 draft = draft,
                 onDraftChange = { draft = it },
                 onSend = {
-                    viewModel.send(draft)
+                    viewModel.send(replyingTo?.let { quoteForReply(it.text, draft) } ?: draft)
                     draft = ""
+                    replyingTo = null
                 },
                 viewModel = viewModel,
             )
@@ -1077,11 +1095,54 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConversationTopBar(state: UiState, profile: String, avatar: AvatarSpec?, viewModel: AppViewModel) {
+    var menuOpen by remember { mutableStateOf(false) }
+    TopAppBar(
+        title = {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                tonalElevation = 2.dp,
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ProfileAvatar(profile.ifBlank { "default" }, avatar, size = 27.dp)
+                    Text(state.openSession?.title ?: stringResource(R.string.action_new_chat), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                }
+            }
+        },
+        navigationIcon = {
+            Surface(modifier = Modifier.padding(start = 7.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                IconButton(onClick = { viewModel.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back)) }
+            }
+        },
+        actions = {
+            Box {
+                Surface(modifier = Modifier.padding(end = 7.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.message_actions)) }
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_refresh)) }, onClick = { menuOpen = false; viewModel.refreshConversation() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.action_new_chat)) }, onClick = { menuOpen = false; viewModel.startNewConversation() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.message_fork)) }, enabled = !state.sending, onClick = { menuOpen = false; viewModel.send("/fork") })
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+    )
+}
+
 @Composable
 private fun MessageBubble(
     line: ChatLine,
     profile: String? = null,
     avatar: AvatarSpec? = null,
+    onActions: (() -> Unit)? = null,
     onDownload: ((ChatFileLink) -> Unit)? = null,
 ) {
     val parsed = remember(line.text, onDownload != null) {
@@ -1109,7 +1170,11 @@ private fun MessageBubble(
                 Spacer(Modifier.width(8.dp))
             }
             Card(
-                modifier = if (wide) Modifier.weight(1f) else Modifier,
+                modifier = (if (wide) Modifier.weight(1f) else Modifier).combinedClickable(
+                    enabled = onActions != null,
+                    onClick = { onActions?.invoke() },
+                    onLongClick = { onActions?.invoke() },
+                ),
                 colors = CardDefaults.cardColors(containerColor = container),
             ) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1139,6 +1204,11 @@ private fun MessageBubble(
             }
         }
     }
+}
+
+private fun quoteForReply(quoted: String, reply: String): String {
+    val excerpt = quoted.trim().lineSequence().take(8).joinToString("\n") { "> $it" }
+    return listOf(excerpt, reply.trim()).filter { it.isNotBlank() }.joinToString("\n\n")
 }
 
 @Composable
@@ -1548,6 +1618,7 @@ private fun Composer(
     val context = LocalContext.current
     var sheet by remember { mutableStateOf<ComposerSheet?>(null) }
     var captureUri by remember { mutableStateOf<Uri?>(null) }
+    var fieldFocused by remember { mutableStateOf(false) }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { readAndAttach(context, it, viewModel) }
@@ -1685,7 +1756,7 @@ private fun Composer(
                 value = draft,
                 onValueChange = onDraftChange,
                 placeholder = { Text(stringResource(R.string.composer_hint)) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).onFocusChanged { fieldFocused = it.isFocused },
                 maxLines = 5,
                 shape = RoundedCornerShape(20.dp),
             )
@@ -1694,7 +1765,9 @@ private fun Composer(
             }
         }
 
-        // Studio keeps its context controls on a row under the field.
+        // Keep reading space generous. Advanced controls appear only while the
+        // composer is active, then collapse again when it is empty.
+        if (fieldFocused || draft.isNotBlank() || state.attachments.isNotEmpty()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1737,6 +1810,7 @@ private fun Composer(
                 )
             }
             ContextUsage(state)
+        }
         }
     }
 }
