@@ -47,8 +47,11 @@ class NavigationStructureTest {
             "openSkills()",
             "openPlugins()",
             "openMcp()",
-            "openPets()",
         ).forEach { destination -> assertTrue("Agent hub lost $destination", hub.contains(destination)) }
+        assertFalse("Pets must not appear in the Agent hub", hub.contains("openPets()"))
+        val skills = File("src/main/java/us/i3u/hermesstudio/AgentToolScreens.kt").readText()
+        assertTrue("Skills must expose write approval", skills.contains("skillsWriteApproval"))
+        assertTrue("Skills approval must update Studio config", skills.contains("setStudioValue(\"skills\", \"write_approval\""))
         listOf("SettingsGroup.Profile", "SettingsGroup.Agent").forEach { setting ->
             assertFalse("Agent hub should not duplicate $setting", hub.contains(setting))
         }
