@@ -15,6 +15,7 @@
     <string name="message_reply">رد</string>
     <string name="message_fork">تفريع المحادثة</string>
     <string name="message_replying">الرد على</string>
+    <string name="composer_expand">فتح كاتب الرسالة</string>
     <string name="skills_write_approval">موافقة تعديلات المهارات</string>
     <string name="skills_write_approval_note">طلب الموافقة قبل أن ينشئ الوكيل مهارة أو يعدّلها.</string>
     <string name="skills_pending_approvals">موافقات المهارات المعلّقة (%1$d)</string>

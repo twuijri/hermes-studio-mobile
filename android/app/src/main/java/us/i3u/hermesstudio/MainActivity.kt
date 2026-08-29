@@ -16,6 +16,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -144,6 +146,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -1619,6 +1622,7 @@ private fun Composer(
     var sheet by remember { mutableStateOf<ComposerSheet?>(null) }
     var captureUri by remember { mutableStateOf<Uri?>(null) }
     var fieldFocused by remember { mutableStateOf(false) }
+    var composerExpanded by rememberSaveable { mutableStateOf(false) }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { readAndAttach(context, it, viewModel) }
@@ -1712,7 +1716,33 @@ private fun Composer(
         null -> Unit
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    if (!composerExpanded && draft.isBlank() && state.attachments.isEmpty() && !state.recording && !state.transcribing) {
+        Row(
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Surface(
+                modifier = Modifier.size(48.dp).clickable { composerExpanded = true },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                tonalElevation = 4.dp,
+                shadowElevation = 3.dp,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.composer_expand))
+                }
+            }
+        }
+        return
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 7.dp),
+        shape = RoundedCornerShape(25.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp,
+        shadowElevation = 3.dp,
+    ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
         if (state.attachments.isNotEmpty() || state.attaching) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -1748,70 +1778,72 @@ private fun Composer(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
         ) {
             OutlinedTextField(
                 value = draft,
                 onValueChange = onDraftChange,
                 placeholder = { Text(stringResource(R.string.composer_hint)) },
-                modifier = Modifier.weight(1f).onFocusChanged { fieldFocused = it.isFocused },
+                modifier = Modifier.fillMaxWidth().onFocusChanged {
+                    if (fieldFocused && !it.isFocused && draft.isBlank() && state.attachments.isEmpty()) {
+                        composerExpanded = false
+                    }
+                    fieldFocused = it.isFocused
+                },
                 maxLines = 5,
                 shape = RoundedCornerShape(20.dp),
             )
-            SendOrRecordButton(state, draft, onSend, viewModel) {
-                askMic.launch(Manifest.permission.RECORD_AUDIO)
-            }
         }
 
-        // Keep reading space generous. Advanced controls appear only while the
-        // composer is active, then collapse again when it is empty.
-        if (fieldFocused || draft.isNotBlank() || state.attachments.isNotEmpty()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable(enabled = !state.sending) { sheet = ComposerSheet.Options },
-                contentAlignment = Alignment.Center,
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = stringResource(R.string.composer_more),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(18.dp),
+                IconButton(onClick = { sheet = ComposerSheet.Options }, enabled = !state.sending) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.composer_more))
+                }
+            }
+            Row(
+                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ToolbarChip(
+                    icon = Icons.Filled.Person,
+                    label = state.openSession?.profile ?: state.activeProfile.ifBlank { "default" },
+                    onClick = {},
                 )
+                ToolbarChip(
+                    icon = Icons.Filled.Psychology,
+                    label = reasoningLabel(state.reasoningEffort),
+                ) { sheet = ComposerSheet.Reasoning }
+                ToolbarChip(
+                    icon = Icons.Filled.ModelTraining,
+                    label = state.sessionModel ?: stringResource(R.string.sheet_model),
+                ) {
+                    viewModel.loadModels()
+                    sheet = ComposerSheet.Model
+                }
+                if (state.speaking) {
+                    AssistChip(
+                        onClick = { viewModel.stopSpeaking() },
+                        label = { Text(stringResource(R.string.voice_stop_reply)) },
+                        leadingIcon = { Icon(Icons.Filled.Stop, null, Modifier.size(15.dp)) },
+                    )
+                }
+                ContextUsage(state)
             }
-            ToolbarChip(
-                icon = Icons.Filled.Psychology,
-                label = reasoningLabel(state.reasoningEffort),
-            ) {
-                sheet = ComposerSheet.Reasoning
+            SendOrRecordButton(state, draft, onSend, viewModel) {
+                askMic.launch(Manifest.permission.RECORD_AUDIO)
             }
-            ToolbarChip(
-                icon = Icons.Filled.ModelTraining,
-                label = state.sessionModel ?: stringResource(R.string.sheet_model),
-            ) {
-                viewModel.loadModels()
-                sheet = ComposerSheet.Model
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            if (state.speaking) {
-                AssistChip(
-                    onClick = { viewModel.stopSpeaking() },
-                    label = { Text(stringResource(R.string.voice_stop_reply)) },
-                    leadingIcon = { Icon(Icons.Filled.Stop, null, Modifier.size(15.dp)) },
-                )
-            }
-            ContextUsage(state)
         }
-        }
+    }
     }
 }
 

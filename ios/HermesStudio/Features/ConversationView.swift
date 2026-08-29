@@ -26,6 +26,7 @@ struct ConversationView: View {
     @State private var bottomVisible = true
     @State private var actionLine: ChatLine?
     @State private var replyingTo: ChatLine?
+    @State private var composerExpanded = false
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -105,7 +106,42 @@ struct ConversationView: View {
 
     private var profile: Profile? { store.profiles.first { $0.name == session.profile } }
 
+    private var composerIsEmpty: Bool {
+        input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        attachments.isEmpty && !recorder.isRecording && !uploading
+    }
+
     private var composer: some View {
+        Group {
+            if !composerExpanded && composerIsEmpty {
+                HStack {
+                    Button {
+                        composerExpanded = true
+                        inputFocused = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.title3.weight(.medium))
+                            .frame(width: 48, height: 48)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open message composer")
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 7)
+            } else {
+                expandedComposer
+            }
+        }
+        .padding(.bottom, 6)
+        .onChange(of: inputFocused) { _, focused in
+            if !focused && composerIsEmpty { composerExpanded = false }
+        }
+    }
+
+    private var expandedComposer: some View {
         VStack(spacing: 9) {
             if let replyingTo {
                 HStack(spacing: 10) {
@@ -117,40 +153,49 @@ struct ConversationView: View {
                 ScrollView(.horizontal, showsIndicators: false) { HStack { ForEach(attachments) { item in HStack(spacing: 6) { Image(systemName: item.mime.hasPrefix("image/") ? "photo" : "doc"); Text(item.name).lineLimit(1); Button { attachments.removeAll { $0.id == item.id } } label: { Image(systemName: "xmark.circle.fill") } }.font(.caption).padding(8).background(.thinMaterial, in: Capsule()) } }.padding(.horizontal, 12) }
             }
             if recorder.isRecording { HStack { Circle().fill(.red).frame(width: 8, height: 8); Text("Recording \(recorder.elapsed.formatted(.number.precision(.fractionLength(0))))s").font(.caption.monospacedDigit()); Spacer(); Text("Tap the microphone to transcribe").font(.caption2).foregroundStyle(.secondary) }.padding(.horizontal, 16) }
-            HStack(alignment: .bottom, spacing: 9) {
+            TextField("Type a message…", text: $input, axis: .vertical)
+                .lineLimit(1...6)
+                .focused($inputFocused)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 11)
+                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
+                .onSubmit { if !input.isEmpty { send() } }
+                .padding(.horizontal, 10)
+            HStack(alignment: .center, spacing: 9) {
                 Menu {
                     Button { importing = true } label: { Label("Attach files", systemImage: "paperclip") }
                     Button { newConversation() } label: { Label("New conversation", systemImage: "plus.bubble") }
                 } label: { Image(systemName: uploading ? "hourglass" : "plus").font(.title3.weight(.medium)).frame(width: 42, height: 42).background(Color(uiColor: .secondarySystemBackground), in: Circle()) }.disabled(uploading)
-                TextField("Type a message…", text: $input, axis: .vertical).lineLimit(1...6).focused($inputFocused).padding(.horizontal, 15).padding(.vertical, 11).background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20)).onSubmit { if !input.isEmpty { send() } }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 15) {
+                        Label(session.profile, systemImage: "person.crop.circle")
+                        Menu { Button("Default") { store.setReasoning("") }; ForEach(["low", "medium", "high", "xhigh"], id: \.self) { value in Button(value.capitalized) { store.setReasoning(value) } } } label: { Label(store.reasoningEffort.nilIfEmpty?.capitalized ?? String(localized: "Default"), systemImage: "brain.head.profile") }
+                        Menu {
+                            ForEach(models) { model in
+                                Button(model.name) {
+                                    selectedModel = model.id
+                                    selectedProvider = model.provider
+                                    Task { await refreshContextWindow() }
+                                }
+                            }
+                        } label: { Label(selectedModel.nilIfEmpty ?? session.model.nilIfEmpty ?? String(localized: "Model"), systemImage: "cpu") }
+                        if speechPlayer.isPlaying { Button { speechPlayer.stop() } label: { Label("Stop voice", systemImage: "stop.fill") } }
+                        ContextUsageView(tokens: contextTokens, window: contextWindow, loading: loadingContext)
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                }
                 if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty {
                     Button { Task { await voice() } } label: { Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill").font(.title3).foregroundStyle(recorder.isRecording ? .red : .primary).frame(width: 44, height: 44).background(Color(uiColor: .secondarySystemBackground), in: Circle()) }
                 } else {
                     Button(action: send) { Image(systemName: sending ? "stop.fill" : "arrow.up").font(.headline).foregroundStyle(.white).frame(width: 44, height: 44).background((sending ? Color.red : HermesTheme.purple).gradient, in: Circle()) }
                 }
             }.padding(.horizontal, 10)
-            if inputFocused || !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty {
-            HStack(spacing: 15) {
-                Menu { Button("Default") { store.setReasoning("") }; ForEach(["low", "medium", "high", "xhigh"], id: \.self) { value in Button(value.capitalized) { store.setReasoning(value) } } } label: { Label(store.reasoningEffort.nilIfEmpty?.capitalized ?? String(localized: "Default"), systemImage: "brain.head.profile") }
-                Menu {
-                    ForEach(models) { model in
-                        Button(model.name) {
-                            selectedModel = model.id
-                            selectedProvider = model.provider
-                            Task { await refreshContextWindow() }
-                        }
-                    }
-                } label: {
-                    Label(selectedModel.nilIfEmpty ?? session.model.nilIfEmpty ?? String(localized: "Model"), systemImage: "cpu")
-                }
-                Spacer()
-                if speechPlayer.isPlaying {
-                    Button { speechPlayer.stop() } label: { Label("Stop voice", systemImage: "stop.fill") }
-                }
-                ContextUsageView(tokens: contextTokens, window: contextWindow, loading: loadingContext)
-            }.font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.bottom, 8)
-            }
-        }.padding(.top, 9).background(.ultraThinMaterial)
+        }
+        .padding(.top, 9)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        .padding(.horizontal, 8)
     }
 
     private func reload() async {

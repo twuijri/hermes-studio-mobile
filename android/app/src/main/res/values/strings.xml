@@ -16,6 +16,7 @@
     <string name="message_reply">Reply</string>
     <string name="message_fork">Fork conversation</string>
     <string name="message_replying">Replying to</string>
+    <string name="composer_expand">Open message composer</string>
     <string name="skills_write_approval">Approve skill changes</string>
     <string name="skills_write_approval_note">Require approval before the agent creates or modifies skills.</string>
     <string name="skills_pending_approvals">Pending skill approvals (%1$d)</string>
