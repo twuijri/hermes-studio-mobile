@@ -175,6 +175,10 @@
 "Compression" = "ضغط السياق";
 "Session reset" = "إعادة ضبط الجلسة";
 "Approvals" = "الموافقات";
+"Approve skill changes" = "موافقة تعديلات المهارات";
+"Require approval before the agent creates or modifies skills." = "طلب الموافقة قبل أن ينشئ الوكيل مهارة أو يعدّلها.";
+"Skill approvals" = "موافقات المهارات";
+"Control approval before the agent writes or changes skills." = "التحكم في الموافقة قبل أن ينشئ الوكيل المهارات أو يعدّلها.";
 "Voice" = "الصوت";
 "Privacy" = "الخصوصية";
 "Gateway auto-start" = "التشغيل التلقائي للبوابة";

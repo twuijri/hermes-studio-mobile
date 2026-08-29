@@ -2344,7 +2344,6 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
                     StudioCardDivider()
                     StudioDestinationRow(Icons.Filled.Cable, Color(0xFF35B7DB), stringResource(R.string.agent_hub_mcp), stringResource(R.string.agent_hub_mcp_note), { viewModel.openMcp() })
                     StudioCardDivider()
-                    StudioDestinationRow(Icons.Filled.Pets, Color(0xFFFF6584), stringResource(R.string.agent_hub_pets), stringResource(R.string.agent_hub_pets_note), { viewModel.openPets() })
                 }
             }
 

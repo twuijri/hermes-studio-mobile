@@ -1499,6 +1499,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun openSkills() {
         _state.update { it.copy(screen = Screen.Skills, error = null, notice = null) }
         loadSkills()
+        loadStudioSettings()
     }
 
     fun selectSkillsTarget(target: String) {

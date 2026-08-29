@@ -7,6 +7,17 @@ struct SkillsView: View {
     var body: some View {
         List {
             Section { SearchBar(text: $search).listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden) }
+            Section("Approvals") {
+                NavigationLink { StudioSectionSettings(section: .skills) } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Approve skill changes")
+                            Text("Require approval before the agent creates or modifies skills.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: { Image(systemName: "checkmark.shield.fill").foregroundStyle(.green) }
+                }
+            }
             ForEach(categories, id: \.self) { category in
                 Section(category.capitalized) {
                     ForEach(filtered.filter { $0.category == category }) { skill in

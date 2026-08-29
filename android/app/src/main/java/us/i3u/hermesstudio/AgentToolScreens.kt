@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Approval
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.CheckCircle
@@ -134,6 +135,33 @@ internal fun SkillsScreen(state: UiState, viewModel: AppViewModel) {
             if (skills.loading) LoadingRow()
             state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
             state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
+            state.studioSettings?.session?.let { session ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Icon(Icons.Filled.Approval, null, tint = MaterialTheme.colorScheme.primary)
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.skills_write_approval), fontWeight = FontWeight.SemiBold)
+                            Text(
+                                stringResource(R.string.skills_write_approval_note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = session.skillsWriteApproval,
+                            onCheckedChange = { viewModel.setStudioValue("skills", "write_approval", it) },
+                            enabled = !state.savingSetting,
+                        )
+                    }
+                }
+            }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 7.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp),

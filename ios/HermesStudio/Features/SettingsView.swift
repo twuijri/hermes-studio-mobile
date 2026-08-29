@@ -115,10 +115,10 @@ struct MoreSettingsView: View {
 }
 
 enum StudioSettingsSection: String {
-    case display, proxy, agent, memory, compression, session, approvals, privacy, voice, gateway
+    case display, proxy, agent, memory, compression, session, approvals, skills, privacy, voice, gateway
     var apiName: String { switch self { case .session: "sessionReset"; case .gateway: "gatewayAutoStart"; default: rawValue } }
-    var title: LocalizedStringKey { switch self { case .display: "Display"; case .proxy: "Proxy"; case .agent: "Agent"; case .memory: "Memory"; case .compression: "Compression"; case .session: "Session reset"; case .approvals: "Approvals"; case .privacy: "Privacy"; case .voice: "Voice"; case .gateway: "Gateway auto-start" } }
-    var note: LocalizedStringKey { switch self { case .display: "Choose what Studio shows while agents work."; case .proxy: "Network proxy variables used by this profile."; case .agent: "Control run limits and tool behavior."; case .memory: "Manage long-term memory and user context."; case .compression: "Keep long conversations within the model context."; case .session: "Choose when a conversation starts a fresh session."; case .approvals: "Require confirmation before sensitive actions."; case .privacy: "Protect personal information sent to models."; case .voice: "Configure speech transcription and voice responses."; case .gateway: "Choose whether gateways start with Studio." } }
+    var title: LocalizedStringKey { switch self { case .display: "Display"; case .proxy: "Proxy"; case .agent: "Agent"; case .memory: "Memory"; case .compression: "Compression"; case .session: "Session reset"; case .approvals: "Approvals"; case .skills: "Skill approvals"; case .privacy: "Privacy"; case .voice: "Voice"; case .gateway: "Gateway auto-start" } }
+    var note: LocalizedStringKey { switch self { case .display: "Choose what Studio shows while agents work."; case .proxy: "Network proxy variables used by this profile."; case .agent: "Control run limits and tool behavior."; case .memory: "Manage long-term memory and user context."; case .compression: "Keep long conversations within the model context."; case .session: "Choose when a conversation starts a fresh session."; case .approvals: "Require confirmation before sensitive actions."; case .skills: "Control approval before the agent writes or changes skills."; case .privacy: "Protect personal information sent to models."; case .voice: "Configure speech transcription and voice responses."; case .gateway: "Choose whether gateways start with Studio." } }
     var fields: [ConfigField] {
         switch self {
         case .display: [.toggle("streaming", "Stream responses", true), .toggle("compact", "Compact layout", false), .toggle("show_reasoning", "Show reasoning", true), .toggle("show_cost", "Show cost", false), .toggle("inline_diffs", "Inline diffs", true), .toggle("bell_on_complete", "Bell on completion", false), .toggle("notify_on_complete", "Completion notification", false), .number("chat_input_height", "Chat input height", 0)]
@@ -128,6 +128,7 @@ enum StudioSettingsSection: String {
         case .compression: [.toggle("enabled", "Compression enabled", true), .decimal("threshold", "Compression threshold", 0.5), .decimal("target_ratio", "Target ratio", 0.2), .number("protect_last_n", "Protect latest messages", 20), .number("protect_first_n", "Protect first messages", 3)]
         case .session: [.choice("mode", "Reset mode", "both", ["off", "idle", "daily", "both"]), .number("idle_minutes", "Idle minutes", 60), .number("at_hour", "Daily reset hour", 0)]
         case .approvals: [.choice("mode", "Approval mode", "off", ["off", "ask", "always"])]
+        case .skills: [.toggle("write_approval", "Approve skill changes", false)]
         case .privacy: [.toggle("redact_pii", "Redact personal information", false)]
         case .voice: [.toggle("enabled", "Voice enabled", true), .text("provider", "Provider"), .text("model", "Speech model"), .text("language", "Default language")]
         case .gateway: [.toggle("enabled", "Start gateways automatically", true), .choice("management", "Management", "per_profile", ["per_profile", "all"])]
