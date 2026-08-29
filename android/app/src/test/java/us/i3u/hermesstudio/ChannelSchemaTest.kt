@@ -54,7 +54,6 @@ class ChannelSchemaTest {
         }
         val nestedScreens = listOf(
             "RoomScreen" to "MainActivity.kt",
-            "ConversationScreen" to "MainActivity.kt",
             "ProfilesScreen" to "MainActivity.kt",
             "SettingsScreen" to "MainActivity.kt",
             "MoreSettingsScreen" to "MainActivity.kt",
@@ -76,5 +75,7 @@ class ChannelSchemaTest {
             val body = files.getValue(file).substringAfter("fun $screen").substringBefore("\n@OptIn", missingDelimiterValue = files.getValue(file).substringAfter("fun $screen"))
             assertTrue("$screen lost its persistent root tabs", body.contains("bottomBar = { StudioTabs(state, viewModel) }"))
         }
+        val conversation = files.getValue("MainActivity.kt").substringAfter("private fun ConversationScreen").substringBefore("private fun MessageBubble")
+        assertFalse("Remote conversation must hide root tabs for reading space", conversation.contains("bottomBar = { StudioTabs(state, viewModel) }"))
     }
 }
