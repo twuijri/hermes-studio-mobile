@@ -114,21 +114,32 @@ struct ConversationView: View {
     private var composer: some View {
         Group {
             if !composerExpanded && composerIsEmpty {
-                HStack {
+                HStack(spacing: 7) {
+                    Button {
+                        composerExpanded = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.title3.weight(.medium))
+                            .frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open message composer")
                     Button {
                         composerExpanded = true
                         inputFocused = true
                     } label: {
-                        Image(systemName: "plus")
-                            .font(.title3.weight(.medium))
-                            .frame(width: 48, height: 48)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+                        Text("Type a message…").foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Open message composer")
-                    Spacer()
+                    Button { Task { await voice() } } label: {
+                        Image(systemName: "mic.fill").font(.title3).frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: Capsule())
+                .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
                 .padding(.horizontal, 12)
                 .padding(.top, 7)
             } else {
@@ -158,7 +169,6 @@ struct ConversationView: View {
                 .focused($inputFocused)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 11)
-                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
                 .onSubmit { if !input.isEmpty { send() } }
                 .padding(.horizontal, 10)
             HStack(alignment: .center, spacing: 9) {
@@ -185,10 +195,14 @@ struct ConversationView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                 }
-                if input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty {
-                    Button { Task { await voice() } } label: { Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill").font(.title3).foregroundStyle(recorder.isRecording ? .red : .primary).frame(width: 44, height: 44).background(Color(uiColor: .secondarySystemBackground), in: Circle()) }
-                } else {
-                    Button(action: send) { Image(systemName: sending ? "stop.fill" : "arrow.up").font(.headline).foregroundStyle(.white).frame(width: 44, height: 44).background((sending ? Color.red : HermesTheme.purple).gradient, in: Circle()) }
+                Button {
+                    if canSend || sending { send() } else { Task { await voice() } }
+                } label: {
+                    Image(systemName: sending || recorder.isRecording ? "stop.fill" : canSend ? "arrow.up" : "mic.fill")
+                        .font(.headline)
+                        .foregroundStyle(canSend || sending ? Color.white : recorder.isRecording ? Color.red : Color.primary)
+                        .frame(width: 40, height: 40)
+                        .background((sending ? Color.red : canSend ? HermesTheme.purple : Color(uiColor: .secondarySystemBackground)).gradient, in: Circle())
                 }
             }.padding(.horizontal, 10)
         }
@@ -196,6 +210,10 @@ struct ConversationView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 25, style: .continuous))
         .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         .padding(.horizontal, 8)
+    }
+
+    private var canSend: Bool {
+        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
     }
 
     private func reload() async {

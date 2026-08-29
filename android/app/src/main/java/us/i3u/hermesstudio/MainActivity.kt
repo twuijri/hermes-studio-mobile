@@ -1717,18 +1717,28 @@ private fun Composer(
     }
 
     if (!composerExpanded && draft.isBlank() && state.attachments.isEmpty() && !state.recording && !state.transcribing) {
-        Row(
+        Surface(
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 3.dp,
+            shadowElevation = 3.dp,
         ) {
-            Surface(
-                modifier = Modifier.size(48.dp).clickable { composerExpanded = true },
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                tonalElevation = 4.dp,
-                shadowElevation = 3.dp,
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                IconButton(onClick = { composerExpanded = true }, modifier = Modifier.size(42.dp)) {
                     Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.composer_expand))
+                }
+                Text(
+                    stringResource(R.string.composer_hint),
+                    modifier = Modifier.weight(1f).clickable { composerExpanded = true }.padding(vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ComposerActionButton(state, draft, onSend, viewModel) {
+                    askMic.launch(Manifest.permission.RECORD_AUDIO)
                 }
             }
         }
@@ -1839,7 +1849,7 @@ private fun Composer(
                 }
                 ContextUsage(state)
             }
-            SendOrRecordButton(state, draft, onSend, viewModel) {
+            ComposerActionButton(state, draft, onSend, viewModel) {
                 askMic.launch(Manifest.permission.RECORD_AUDIO)
             }
         }
@@ -1914,7 +1924,7 @@ private const val PHONE_REPOSITORY_URL = "https://github.com/twuijri/hermes-stud
 private const val STUDIO_REPOSITORY_URL = "https://github.com/EKKOLearnAI/hermes-studio"
 
 @Composable
-private fun SendOrRecordButton(
+private fun ComposerActionButton(
     state: UiState,
     draft: String,
     onSend: () -> Unit,
@@ -1922,12 +1932,13 @@ private fun SendOrRecordButton(
     onRecord: () -> Unit,
 ) {
     val hasPayload = draft.isNotBlank() || state.attachments.isNotEmpty()
-    val background = if (hasPayload || state.recording || state.sending) {
+    val active = hasPayload || state.recording || state.sending
+    val background = if (active) {
         MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.surfaceVariant
     }
-    val tint = if (hasPayload || state.recording || state.sending) {
+    val tint = if (active) {
         MaterialTheme.colorScheme.onPrimary
     } else {
         MaterialTheme.colorScheme.onSurface
@@ -1935,25 +1946,23 @@ private fun SendOrRecordButton(
 
     Box(
         modifier = Modifier
-            .padding(bottom = 4.dp)
-            .size(46.dp)
-            .clip(RoundedCornerShape(23.dp))
+            .size(40.dp)
+            .clip(CircleShape)
             .background(background),
         contentAlignment = Alignment.Center,
     ) {
         when {
             state.recording -> IconButton(onClick = { viewModel.stopRecordingAndTranscribe() }) {
-                Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.composer_stop), tint = tint)
+                Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.composer_stop), tint = tint, modifier = Modifier.size(20.dp))
             }
-            // A streaming run can be called off, so the button becomes a stop.
             state.sending -> IconButton(onClick = { viewModel.stopRun() }) {
-                Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.conversation_stop), tint = tint)
+                Icon(Icons.Filled.Stop, contentDescription = stringResource(R.string.conversation_stop), tint = tint, modifier = Modifier.size(20.dp))
             }
-            hasPayload -> IconButton(onClick = onSend, enabled = !state.sending) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.composer_send), tint = tint)
+            hasPayload -> IconButton(onClick = onSend) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.composer_send), tint = tint, modifier = Modifier.size(20.dp))
             }
             else -> IconButton(onClick = onRecord, enabled = !state.transcribing) {
-                Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.composer_record), tint = tint)
+                Icon(Icons.Filled.Mic, contentDescription = stringResource(R.string.composer_record), tint = tint, modifier = Modifier.size(20.dp))
             }
         }
     }
