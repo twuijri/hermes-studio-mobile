@@ -796,4 +796,5 @@
     <string name="runtime_versions_title">Runtime versions</string><string name="runtime_versions_note">Install, activate, and restart managed runtimes</string><string name="restart_webui">Restart Web UI</string><string name="activate">Activate</string>
     <string name="appearance_title">Appearance</string><string name="appearance_note">Studio colors, text, and background</string><string name="font_size">Font size</string><string name="text_color">Text color</string><string name="accent_color">Accent color</string><string name="remove_background">Remove background</string><string name="upload_background">Upload background</string>
     <string name="kanban_operations">Operations and diagnostics</string><string name="kanban_dispatch">Dispatch</string><string name="kanban_complete">Complete</string><string name="kanban_reassign">Reassign</string>
+    <string name="action_send">Send</string>
 </resources>

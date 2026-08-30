@@ -795,4 +795,5 @@
     <string name="runtime_versions_title">إصدارات التشغيل</string><string name="runtime_versions_note">تنزيل وتفعيل وإعادة تشغيل البيئات المدارة</string><string name="restart_webui">إعادة تشغيل واجهة الويب</string><string name="activate">تفعيل</string>
     <string name="appearance_title">المظهر</string><string name="appearance_note">ألوان الاستديو والنص والخلفية</string><string name="font_size">حجم الخط</string><string name="text_color">لون النص</string><string name="accent_color">اللون البارز</string><string name="remove_background">إزالة الخلفية</string><string name="upload_background">رفع خلفية</string>
     <string name="kanban_operations">العمليات والتشخيص</string><string name="kanban_dispatch">إرسال للتنفيذ</string><string name="kanban_complete">إكمال</string><string name="kanban_reassign">إعادة تعيين</string>
+    <string name="action_send">إرسال</string>
 </resources>

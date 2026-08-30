@@ -853,7 +853,26 @@ class HermesApi(
     fun testWebhook(id: String): String { val r = call("/api/studio/webhooks/endpoints/${enc(id)}/test", "POST", JSONObject()); return if (r.optBoolean("ok")) "OK (${r.optInt("status")})" else r.optString("error", "Failed") }
     fun webhookEvents(): List<String> { val a = call("/api/studio/webhooks/local-test-events").optJSONArray("events") ?: JSONArray(); return (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let { e -> "${e.optString("received_at")} · ${e.optString("event")}" } } }
     fun clearWebhookEvents() { call("/api/studio/webhooks/local-test-events", "DELETE") }
-    fun runtimeVersions(): RuntimeVersions { val r = call("/api/hermes/runtime-versions"); val h = r.optJSONObject("hermes") ?: JSONObject(); val w = r.optJSONObject("webui") ?: JSONObject(); fun versions(a: JSONArray?, kind: String) = (0 until (a?.length() ?: 0)).mapNotNull { a?.optJSONObject(it)?.let { v -> RuntimeVersion(v.optString("version"), v.optBoolean("active"), kind) } }; return RuntimeVersions(r.optString("platform"), h.optString("activeVersion"), w.optString("activeVersion"), versions(h.optJSONArray("installed"), "runtime"), versions(w.optJSONArray("installed"), "webui"), strings(h.optJSONArray("remoteVersions")), strings(w.optJSONArray("remoteVersions"))) }
+    fun runtimeVersions(): RuntimeVersions {
+        val root = call("/api/hermes/runtime-versions")
+        val hermes = root.optJSONObject("hermes") ?: JSONObject()
+        val webUi = root.optJSONObject("webui") ?: JSONObject()
+        fun installed(array: JSONArray?, kind: String): List<RuntimeVersion> =
+            (0 until (array?.length() ?: 0)).mapNotNull { index ->
+                array?.optJSONObject(index)?.let { version ->
+                    RuntimeVersion(version.optString("version"), version.optBoolean("active"), kind)
+                }
+            }
+        return RuntimeVersions(
+            platform = root.optString("platform"),
+            activeRuntime = hermes.optString("activeVersion"),
+            activeWebUi = webUi.optString("activeVersion"),
+            runtime = installed(hermes.optJSONArray("installed"), "runtime"),
+            webUi = installed(webUi.optJSONArray("installed"), "webui"),
+            remoteRuntime = strings(hermes.optJSONArray("remoteVersions")),
+            remoteWebUi = strings(webUi.optJSONArray("remoteVersions")),
+        )
+    }
     fun activateVersion(version: String, webUi: Boolean) { call("/api/hermes/runtime-versions/${if (webUi) "active-webui" else "active-runtime"}", "POST", JSONObject().put("version", version)) }
     fun downloadVersion(version: String, webUi: Boolean) { call("/api/hermes/runtime-versions/${if (webUi) "webui" else "runtime"}/download", "POST", JSONObject().put("version", version).put("source", "github")) }
     fun restartWebUi() { call("/api/hermes/runtime-versions/restart-webui", "POST", JSONObject()) }

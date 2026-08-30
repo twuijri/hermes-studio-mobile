@@ -102,6 +102,10 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewKanban
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
