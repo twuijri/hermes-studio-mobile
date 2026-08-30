@@ -2,6 +2,19 @@ import XCTest
 @testable import HermesStudio
 
 final class HermesStudioTests: XCTestCase {
+    func testWorkflowDefinitionKeepsEditableGraph() {
+        let item = WorkflowItem(["id": "wf", "name": "Research", "profile": "main", "workspace": "/work", "nodes": [["id": "a", "type": "agent"]], "edges": [["source": "a", "target": "b"]], "viewport": ["x": 1, "y": 2, "zoom": 1]])
+        XCTAssertEqual(item.nodes.first?.string("id"), "a")
+        XCTAssertEqual(item.edges.first?.string("target"), "b")
+        XCTAssertEqual(item.viewport.int("x"), 1)
+    }
+
+    func testSessionSummaryKeepsOrganizationAndPushState() {
+        let item = SessionSummary(["id": "s", "profile": "main", "workspace": "/repo", "category_id": 9, "push_enabled": false])
+        XCTAssertEqual(item.workspace, "/repo")
+        XCTAssertEqual(item.categoryID, 9)
+        XCTAssertFalse(item.pushEnabled)
+    }
     func testClarificationUsesCanonicalPayloadKeys() {
         let payload = ChatSocket.clarificationPayload(sessionID: "s1", clarificationID: "c1", answer: "نعم")
         XCTAssertEqual(payload.string("clarify_id"), "c1")

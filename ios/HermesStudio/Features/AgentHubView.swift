@@ -247,8 +247,10 @@ struct WorkflowsView: View {
     @EnvironmentObject private var store: AppStore
     @State private var workflows: [WorkflowItem] = []
     @State private var loading = true
+    @State private var editing: WorkflowItem?; @State private var creating = false; @State private var importing = false; @State private var importPreview: JSON = [:]; @State private var importToken = ""; @State private var showingImport = false
+    @State private var selectedIDs: Set<String> = []
     var body: some View {
-        List {
+        List(selection: $selectedIDs) {
             if loading && workflows.isEmpty { ProgressView("Loading workflows…") }
             else if workflows.isEmpty { ContentUnavailableView("No workflows", systemImage: "point.3.connected.trianglepath.dotted", description: Text("Create workflow definitions in Studio, then run and monitor them here.")) }
             ForEach(workflows) { workflow in
@@ -258,11 +260,32 @@ struct WorkflowsView: View {
                         VStack(alignment: .leading, spacing: 4) { Text(workflow.name).font(.headline); HStack { Text(workflow.profile); Text("·"); Text("\(workflow.nodeCount) nodes") }.font(.caption).foregroundStyle(.secondary); if !workflow.workspace.isEmpty { Text(workflow.workspace).font(.caption2).foregroundStyle(.tertiary).lineLimit(1) } }
                     }
                 }
+                .tag(workflow.id)
+                .swipeActions { Button(role: .destructive) { Task { await delete(workflow) } } label: { Label("Delete", systemImage: "trash") }; Button { editing = workflow } label: { Label("Edit", systemImage: "pencil") }.tint(.blue) }
             }
         }.listStyle(.insetGrouped).navigationTitle("Workflows").refreshable { await load() }.task { await load() }
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") } } }
+        .toolbar { ToolbarItemGroup(placement: .topBarTrailing) { if !selectedIDs.isEmpty { Button(role: .destructive) { Task { await batchDelete() } } label: { Image(systemName: "trash") } }; EditButton(); Button { importing = true } label: { Image(systemName: "square.and.arrow.down") }; Button { creating = true } label: { Image(systemName: "plus") }; Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") } } }
+        .sheet(isPresented: $creating) { WorkflowEditor(workflow: nil) { await load() } }
+        .sheet(item: $editing) { item in WorkflowEditor(workflow: item) { await load() } }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .plainText]) { result in if case let .success(url) = result { Task { await previewImport(url) } } }
+        .alert("Import workflow?", isPresented: $showingImport) { Button("Import") { Task { await confirmImport() } }; Button("Cancel", role: .cancel) { Task { await cancelImport() } } } message: { Text("\(importPreview.object("summary").string("name")) · \(importPreview.object("summary").int("nodes")) nodes") }
     }
     private func load() async { loading = true; do { workflows = try await store.api.workflows(profile: store.selectedProfile) } catch { store.errorMessage = error.localizedDescription }; loading = false }
+    private func delete(_ workflow: WorkflowItem) async { do { try await store.api.deleteWorkflow(workflow.id); await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func batchDelete() async { do { _ = try await store.api.batchDeleteWorkflows(Array(selectedIDs)); selectedIDs = []; await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func previewImport(_ url: URL) async { let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }; do { let document = try String(contentsOf: url); importPreview = try await store.api.previewWorkflowImport(document, profile: store.selectedProfile); importToken = importPreview.string("token"); showingImport = !importToken.isEmpty } catch { store.errorMessage = error.localizedDescription } }
+    private func confirmImport() async { do { try await store.api.confirmWorkflowImport(token: importToken, profile: store.selectedProfile); importToken = ""; await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func cancelImport() async { try? await store.api.cancelWorkflowImport(token: importToken, profile: store.selectedProfile); importToken = "" }
+}
+
+private struct WorkflowEditor: View {
+    @EnvironmentObject private var store: AppStore; @Environment(\.dismiss) private var dismiss
+    let workflow: WorkflowItem?; let reload: () async -> Void
+    @State private var name = ""; @State private var profile = ""; @State private var workspace = ""; @State private var nodes = "[]"; @State private var edges = "[]"; @State private var error = ""
+    var body: some View { NavigationStack { Form { Section("Definition") { TextField("Name", text: $name); Picker("Profile", selection: $profile) { ForEach(store.profiles) { Text($0.name).tag($0.name) } }; TextField("Workspace path", text: $workspace) }; Section("Nodes JSON") { TextEditor(text: $nodes).font(.caption.monospaced()).frame(minHeight: 180) }; Section("Edges JSON") { TextEditor(text: $edges).font(.caption.monospaced()).frame(minHeight: 120) }; if !error.isEmpty { Text(error).foregroundStyle(.red) } }.navigationTitle(workflow == nil ? "New workflow" : "Edit workflow").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(name.isEmpty) } }.onAppear { profile = workflow?.profile.nilIfEmpty ?? store.selectedProfile; name = workflow?.name ?? ""; workspace = workflow?.workspace ?? ""; nodes = encode(workflow?.nodes ?? []); edges = encode(workflow?.edges ?? []) } } }
+    private func encode(_ value: Any) -> String { guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else { return "[]" }; return String(data: data, encoding: .utf8) ?? "[]" }
+    private func decode(_ text: String) throws -> [JSON] { guard let data = text.data(using: .utf8), let rows = try JSONSerialization.jsonObject(with: data) as? [JSON] else { throw HermesError.server(String(localized: "Definition must be a JSON array")) }; return rows }
+    private func save() async { do { _ = try await store.api.saveWorkflow(id: workflow?.id, name: name, profile: profile, workspace: workspace.nilIfEmpty, nodes: try decode(nodes), edges: try decode(edges), viewport: workflow?.viewport ?? [:]); await reload(); dismiss() } catch let failure { error = failure.localizedDescription } }
 }
 
 private struct WorkflowDetailView: View {
@@ -273,6 +296,7 @@ private struct WorkflowDetailView: View {
     @State private var running = false
     @State private var showRunPrompt = false
     @State private var runInput = ""
+    @State private var schedules: [WorkflowSchedule] = []; @State private var editingSchedule: WorkflowSchedule?; @State private var newSchedule = false; @State private var exportURL: URL?
     var body: some View {
         List {
             Section {
@@ -286,11 +310,25 @@ private struct WorkflowDetailView: View {
                 else if runs.isEmpty { Text("No runs yet").foregroundStyle(.secondary) }
                 ForEach(runs) { run in WorkflowRunRow(workflow: workflow, run: run, reload: load) }
             }
+            Section("Schedules") { ForEach(schedules) { schedule in Button { editingSchedule = schedule } label: { HStack { VStack(alignment: .leading) { Text(schedule.schedule).font(.headline); Text(schedule.timezone).font(.caption).foregroundStyle(.secondary) }; Spacer(); StatusPill(text: schedule.enabled ? "Enabled" : "Disabled", color: schedule.enabled ? .green : .secondary) } }.buttonStyle(.plain).swipeActions { Button(role: .destructive) { Task { await deleteSchedule(schedule) } } label: { Label("Delete", systemImage: "trash") } } }; Button("Add schedule") { newSchedule = true } }
         }.navigationTitle(workflow.name).navigationBarTitleDisplayMode(.inline).refreshable { await load() }.task { await load() }
         .alert("Run workflow", isPresented: $showRunPrompt) { TextField("Optional input", text: $runInput, axis: .vertical); Button("Run") { Task { await start() } }; Button("Cancel", role: .cancel) {} } message: { Text("Provide optional input for the workflow's start nodes.") }
+        .sheet(isPresented: $newSchedule) { WorkflowScheduleEditor(workflowID: workflow.id, schedule: nil) { await load() } }
+        .sheet(item: $editingSchedule) { item in WorkflowScheduleEditor(workflowID: workflow.id, schedule: item) { await load() } }
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { if let exportURL { ShareLink(item: exportURL) { Image(systemName: "square.and.arrow.up") } } else { Button { Task { await exportDefinition() } } label: { Image(systemName: "square.and.arrow.up") } } } }
     }
-    private func load() async { loading = true; do { runs = try await store.api.workflowRuns(workflow.id) } catch { store.errorMessage = error.localizedDescription }; loading = false }
+    private func load() async { loading = true; do { runs = try await store.api.workflowRuns(workflow.id); schedules = try await store.api.workflowSchedules(workflow.id) } catch { store.errorMessage = error.localizedDescription }; loading = false }
     private func start() async { running = true; do { try await store.api.runWorkflow(workflow.id, input: runInput); store.notify(String(localized: "Workflow started")); try? await Task.sleep(for: .milliseconds(500)); await load() } catch { store.errorMessage = error.localizedDescription }; running = false }
+    private func deleteSchedule(_ schedule: WorkflowSchedule) async { do { try await store.api.deleteWorkflowSchedule(workflowID: workflow.id, scheduleID: schedule.id); await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func exportDefinition() async { do { let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(workflow.name.replacingOccurrences(of: "/", with: "-"))-workflow.json"); try await store.api.exportWorkflow(workflow.id).write(to: url, options: .atomic); exportURL = url } catch { store.errorMessage = error.localizedDescription } }
+}
+
+private struct WorkflowScheduleEditor: View {
+    @EnvironmentObject private var store: AppStore; @Environment(\.dismiss) private var dismiss
+    let workflowID: String; let schedule: WorkflowSchedule?; let reload: () async -> Void
+    @State private var expression = "0 9 * * *"; @State private var timezone = TimeZone.current.identifier; @State private var enabled = true; @State private var input = ""
+    var body: some View { NavigationStack { Form { TextField("Cron schedule", text: $expression).textInputAutocapitalization(.never); TextField("Timezone", text: $timezone).textInputAutocapitalization(.never); Toggle("Enabled", isOn: $enabled); TextField("Optional input", text: $input, axis: .vertical) }.navigationTitle(schedule == nil ? "New schedule" : "Edit schedule").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } }.disabled(expression.isEmpty || timezone.isEmpty) } }.onAppear { if let schedule { expression = schedule.schedule; timezone = schedule.timezone; enabled = schedule.enabled; input = schedule.input } } } }
+    private func save() async { do { try await store.api.saveWorkflowSchedule(workflowID: workflowID, scheduleID: schedule?.id, schedule: expression, timezone: timezone, enabled: enabled, input: input); await reload(); dismiss() } catch { store.errorMessage = error.localizedDescription } }
 }
 
 private struct WorkflowRunRow: View {
@@ -309,6 +347,7 @@ private struct WorkflowRunRow: View {
                     if node.status == "blocked" {
                         HStack { Button("Approve") { Task { await approve(node, true) } }.buttonStyle(.borderedProminent); Button("Reject", role: .destructive) { Task { await approve(node, false) } }.buttonStyle(.bordered) }
                     }
+                    Button("Rerun from node") { Task { await rerun(node) } }.buttonStyle(.bordered)
                 }.padding(.vertical, 4)
             }
             if run.status == "running" || run.status == "queued" { Button("Stop run", role: .destructive) { Task { await stop() } } }
@@ -320,6 +359,7 @@ private struct WorkflowRunRow: View {
     private func stop() async { do { try await store.api.stopWorkflow(workflow.id, runID: run.id); await reload() } catch { store.errorMessage = error.localizedDescription } }
     private func delete() async { do { try await store.api.deleteWorkflowRun(workflow.id, runID: run.id); await reload() } catch { store.errorMessage = error.localizedDescription } }
     private func approve(_ node: WorkflowRunNode, _ approved: Bool) async { do { try await store.api.approveWorkflowNode(workflow.id, runID: run.id, node: node, approved: approved); await reload() } catch { store.errorMessage = error.localizedDescription } }
+    private func rerun(_ node: WorkflowRunNode) async { do { try await store.api.rerunWorkflow(workflow.id, runID: run.id, nodeID: node.nodeID); await reload() } catch { store.errorMessage = error.localizedDescription } }
 }
 
 struct StudioFilesView: View {

@@ -12,6 +12,7 @@ enum LiveRunEvent {
     case queued([QueuedRun])
     case queueInsertion(id: String, phase: String)
     case subagent(id: String, event: String, title: String, detail: String)
+    case resumeState(workspace: String, model: String, provider: String, apiMode: String, pushEnabled: Bool, workspaceChanges: [JSON])
     case failed(String, retryable: Bool)
 }
 
@@ -185,6 +186,7 @@ final class ChatSocket: @unchecked Sendable {
                 case "resumed", "app.resumed":
                     let restored = Self.restoredResume(json, sessionID: sessionID)
                     if let usage = Self.usage(restored) { continuation.yield(usage) }
+                    continuation.yield(.resumeState(workspace: restored.string("workspace"), model: restored.string("model"), provider: restored.string("provider"), apiMode: restored.string("api_mode"), pushEnabled: restored.bool("push_enabled"), workspaceChanges: restored.objects("workspaceRunChanges")))
                     continuation.yield(.queued(restored.objects("queueMessages").map(QueuedRun.init)))
                     let insertion = restored.object("queueInsertion")
                     if !insertion.isEmpty { continuation.yield(.queueInsertion(id: insertion.string("queue_id"), phase: insertion.string("phase"))) }
@@ -194,7 +196,7 @@ final class ChatSocket: @unchecked Sendable {
                         if replayEvent == "approval.requested" || replayEvent == "clarify.requested" { continuation.yield(.requiresAction(kind: replayEvent, payload: replayData)) }
                         else if replayEvent.hasPrefix("subagent.") || replayEvent == "delegation.updated" { continuation.yield(.subagent(id: replayData.string("delegation_id", "subagent_id", "id").nilIfEmpty ?? UUID().uuidString, event: replayEvent, title: replayData.string("goal", "name", "summary").nilIfEmpty ?? String(localized: "Subagent"), detail: replayData.string("text", "summary", "status", "tool", "error"))) }
                     }
-                    if restored.bool("isWorking") {
+                    if restored.bool("isWorking") || restored.int("queueLength") > 0 || restored.int("backgroundPending") > 0 {
                         started = true
                     } else if let completion = Self.completion(fromResume: restored) {
                         continuation.yield(.completed(output: completion.output, reasoning: completion.reasoning))

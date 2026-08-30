@@ -158,9 +158,9 @@ final class APIClient: @unchecked Sendable {
         return "/api/hermes/sessions?profile=\(profile.urlEncoded)&limit=\(limit)"
     }
 
-    func sessions(profile: String? = nil) async throws -> [SessionSummary] {
+    func sessions(profile: String? = nil, limit: Int = 100) async throws -> [SessionSummary] {
         let fallbackProfile = profile?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        var canonical = "/api/studio/sessions?limit=100"
+        var canonical = "/api/studio/sessions?limit=\(limit)"
         if !fallbackProfile.isEmpty { canonical += "&profile=\(fallbackProfile.urlEncoded)" }
         do {
             return try await array(canonical, keys: ["sessions"]).map { SessionSummary($0, profile: fallbackProfile) }.filter { !$0.id.isEmpty }
@@ -203,6 +203,24 @@ final class APIClient: @unchecked Sendable {
     func stopWorkflow(_ id: String, runID: String) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)/stop", method: "POST") }
     func deleteWorkflowRun(_ id: String, runID: String) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)", method: "DELETE") }
     func approveWorkflowNode(_ id: String, runID: String, node: WorkflowRunNode, approved: Bool) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)/nodes/\(node.nodeID.urlEncoded)/approval", method: "POST", body: ["approved": approved, "executionId": node.executionID]) }
+    func workflow(_ id: String) async throws -> WorkflowItem { WorkflowItem(try await object("/api/studio/workflows/\(id.urlEncoded)").object("workflow")) }
+    func saveWorkflow(id: String?, name: String, profile: String, workspace: String?, nodes: [JSON], edges: [JSON], viewport: JSON = [:]) async throws -> WorkflowItem { var body: JSON = ["name": name, "workspace": workspace ?? NSNull(), "nodes": nodes, "edges": edges]; if id == nil { body["profile"] = profile }; if !viewport.isEmpty { body["viewport"] = viewport }; let root = try await object(id.map { "/api/studio/workflows/\($0.urlEncoded)" } ?? "/api/studio/workflows", method: id == nil ? "POST" : "PATCH", body: body); return WorkflowItem(root.object("workflow")) }
+    func deleteWorkflow(_ id: String) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)", method: "DELETE") }
+    func batchDeleteWorkflows(_ ids: [String]) async throws -> JSON { try await object("/api/studio/workflows/batch-delete", method: "POST", body: ["ids": ids]) }
+    func exportWorkflow(_ id: String) async throws -> Data { try await rawData("/api/studio/workflows/\(id.urlEncoded)/export") }
+    func previewWorkflowImport(_ document: String, profile: String?) async throws -> JSON { try await object("/api/studio/workflows/import/preview", method: "POST", body: ["document": document, "profile": profile ?? NSNull()]).object("preview") }
+    func confirmWorkflowImport(token: String, profile: String?) async throws { _ = try await object("/api/studio/workflows/import/confirm", method: "POST", body: ["token": token, "profile": profile ?? NSNull()]) }
+    func cancelWorkflowImport(token: String, profile: String?) async throws { _ = try await object("/api/studio/workflows/import/cancel", method: "POST", body: ["token": token, "profile": profile ?? NSNull()]) }
+    func rerunWorkflow(_ id: String, runID: String, nodeID: String, timeout: Int? = nil) async throws { var body: JSON = ["node_id": nodeID, "preserve_start_node": true]; if let timeout { body["timeout_ms"] = timeout }; _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)/rerun-from-node", method: "POST", body: body) }
+    func workflowSchedules(_ id: String) async throws -> [WorkflowSchedule] { try await array("/api/studio/workflows/\(id.urlEncoded)/schedules", keys: ["schedules"]).map(WorkflowSchedule.init) }
+    func saveWorkflowSchedule(workflowID: String, scheduleID: String?, schedule: String, timezone: String, enabled: Bool, input: String) async throws { _ = try await object(scheduleID.map { "/api/studio/workflows/\(workflowID.urlEncoded)/schedules/\($0.urlEncoded)" } ?? "/api/studio/workflows/\(workflowID.urlEncoded)/schedules", method: scheduleID == nil ? "POST" : "PATCH", body: ["schedule": schedule, "timezone": timezone, "enabled": enabled, "input": input, "start_node_ids": []]) }
+    func deleteWorkflowSchedule(workflowID: String, scheduleID: String) async throws { _ = try await object("/api/studio/workflows/\(workflowID.urlEncoded)/schedules/\(scheduleID.urlEncoded)", method: "DELETE") }
+
+    func batchDeleteSessions(_ sessions: [SessionSummary]) async throws -> JSON { try await object("/api/studio/sessions/batch-delete", method: "POST", body: ["ids": sessions.map(\.id), "sessions": sessions.map { ["id": $0.id, "profile": $0.profile] }]) }
+    func setSessionWorkspace(_ id: String, workspace: String?) async throws { _ = try await object("/api/studio/sessions/\(id.urlEncoded)/workspace", method: "POST", body: ["workspace": workspace ?? ""]) }
+    func setSessionPush(_ id: String, enabled: Bool) async throws { _ = try await object("/api/studio/sessions/\(id.urlEncoded)/push-enabled", method: "POST", body: ["pushEnabled": enabled]) }
+    func exportSession(_ id: String, mode: String = "full", ext: String = "json") async throws -> Data { try await rawData("/api/studio/sessions/\(id.urlEncoded)/export?mode=\(mode.urlEncoded)&ext=\(ext.urlEncoded)") }
+    func workspaceFolders() async throws -> [String] { let root = try await object("/api/studio/workspace/folders"); return root.array("folders").compactMap { ($0 as? String) ?? ($0 as? JSON)?.string("path") } }
 
     func conversationHistory(sessionID: String) async throws -> (messages: [Message], contextTokens: Int?) {
         let path = "/api/hermes/sessions/conversations/\(sessionID.urlEncoded)/messages?humanOnly=true"
@@ -291,8 +309,8 @@ final class APIClient: @unchecked Sendable {
         )
     }
 
-    func renameSession(_ id: String, title: String) async throws { _ = try await object("/api/hermes/sessions/\(id.urlEncoded)/rename", method: "POST", body: ["title": title]) }
-    func deleteSession(_ id: String) async throws { _ = try await object("/api/hermes/sessions/\(id.urlEncoded)", method: "DELETE") }
+    func renameSession(_ id: String, title: String) async throws { _ = try await object("/api/studio/sessions/\(id.urlEncoded)/rename", method: "POST", body: ["title": title]) }
+    func deleteSession(_ id: String) async throws { _ = try await object("/api/studio/sessions/\(id.urlEncoded)", method: "DELETE") }
     func setSessionModel(_ id: String, model: String, provider: String?) async throws {
         var body: JSON = ["model": model]; if let provider, !provider.isEmpty { body["provider"] = provider }
         _ = try await object("/api/hermes/sessions/\(id.urlEncoded)/model", method: "POST", body: body)
@@ -605,6 +623,8 @@ final class APIClient: @unchecked Sendable {
         guard let json = try JSONSerialization.jsonObject(with: responseData) as? JSON else { throw HermesError.malformedResponse }
         return json
     }
+
+    private func rawData(_ path: String) async throws -> Data { var request = URLRequest(url: try url(path)); if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }; let (data, response) = try await session.data(for: request); guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw HermesError.http((response as? HTTPURLResponse)?.statusCode ?? -1, Self.errorDetail(data)) }; return data }
 
     func downloadURL(path: String, name: String, profile: String) -> URL? {
         var components = URLComponents(string: baseURL + "/api/hermes/download")

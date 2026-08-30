@@ -9,6 +9,9 @@ private struct ConversationPendingAction: Identifiable {
     var actionID: String { payload.string("approval_id", "approvalId", "clarify_id", "clarification_id", "clarificationId", "id") }
     var prompt: String { payload.string("prompt", "question", "message", "description", "tool_name").nilIfEmpty ?? String(localized: "The agent needs your response before it can continue.") }
     var choices: [String] { let values = payload.strings("choices"); return values.isEmpty ? ["once", "session", "always"] : values }
+    var initialResponse: String { payload.string("initial_response") }
+    var responseMode: String { payload.string("response_mode") }
+    var remainingSeconds: Int { max(0, payload.int("remaining_timeout_ms") / 1000) }
 }
 
 struct ConversationView: View {
@@ -41,6 +44,7 @@ struct ConversationView: View {
     @State private var clarificationAnswer = ""
     @State private var queuedRuns: [QueuedRun] = []
     @State private var queueInsertionID = ""
+    @State private var resumedWorkspace = ""; @State private var resumedPush = false; @State private var workspaceChanges: [JSON] = []
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -77,6 +81,7 @@ struct ConversationView: View {
                 .task { await reload(); try? await Task.sleep(for: .milliseconds(120)); reader.scrollTo("bottom", anchor: .bottom) }
             }
             if !queuedRuns.isEmpty { queuedPanel }
+            if !workspaceChanges.isEmpty { HStack { Label("\(workspaceChanges.count) workspace changes", systemImage: "arrow.triangle.branch"); Spacer(); if !resumedWorkspace.isEmpty { Text(resumedWorkspace).lineLimit(1) } }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 14).padding(.vertical, 5) }
             Divider(); composer
         }
         .background(Color(uiColor: .systemBackground))
@@ -119,7 +124,7 @@ struct ConversationView: View {
                             Button("Reject", role: .destructive) { socket.respondToApproval(sessionID: session.id, approvalID: action.actionID, choice: "deny"); pendingAction = nil }
                         }
                     } else {
-                        Section("Your answer") { TextField("Type clarification", text: $clarificationAnswer, axis: .vertical).lineLimit(2...6) }
+                        Section("Your answer") { TextField("Type clarification", text: $clarificationAnswer, axis: .vertical).lineLimit(2...6); if !action.responseMode.isEmpty { LabeledContent("Response mode", value: action.responseMode) }; if action.remainingSeconds > 0 { Label("\(action.remainingSeconds)s remaining", systemImage: "timer") } }
                     }
                 }
                 .navigationTitle(action.isApproval ? "Approval" : "Clarification").navigationBarTitleDisplayMode(.inline)
@@ -311,11 +316,13 @@ struct ConversationView: View {
                 case let .requiresAction(kind, payload):
                     let action = ConversationPendingAction(kind: kind, payload: payload)
                     pendingAction = action
+                    if !action.isApproval && clarificationAnswer.isEmpty { clarificationAnswer = action.initialResponse }
                     lines[index].text += action.isApproval ? String(localized: "Approval is waiting for your response.") : String(localized: "Clarification is waiting for your response.")
                 case let .actionResolved(id): if pendingAction?.actionID == id || id.isEmpty { pendingAction = nil }
                 case let .queued(items): queuedRuns = items
                 case let .queueInsertion(id, phase): queueInsertionID = phase == "cancelled" ? "" : id
                 case let .subagent(id, event, title, detail): updateTool(index: index, id: "subagent-\(id)", name: title, detail: detail.nilIfEmpty ?? event, status: event == "subagent.complete" ? .done : .running, duration: nil); gotAnything = true
+                case let .resumeState(workspace, model, provider, _, pushEnabled, changes): resumedWorkspace = workspace; resumedPush = pushEnabled; workspaceChanges = changes; if !model.isEmpty { selectedModel = model }; if !provider.isEmpty { selectedProvider = provider }
                 case let .failed(message, retryable):
                     if retryable && !gotAnything { await restFallback(index: index, text: text, files: files) }
                     else { lines[index].text = lines[index].text.nilIfEmpty ?? message; lines[index].isError = true; lines[index].isStreaming = false }

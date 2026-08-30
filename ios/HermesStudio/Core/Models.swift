@@ -156,13 +156,16 @@ struct SessionCategory: Identifiable, Hashable {
     init(_ json: JSON) { id = json.int("id"); name = json.string("name") }
 }
 
-struct WorkflowItem: Identifiable, Hashable {
+struct WorkflowItem: Identifiable {
     let id: String
     var name: String
     var profile: String
     var workspace: String
     var nodeCount: Int
     var updatedAt: Int64
+    var nodes: [JSON]
+    var edges: [JSON]
+    var viewport: JSON
     init(_ json: JSON) {
         id = json.string("id")
         name = json.string("name").nilIfEmpty ?? String(localized: "Untitled workflow")
@@ -170,7 +173,21 @@ struct WorkflowItem: Identifiable, Hashable {
         workspace = json.string("workspace")
         nodeCount = json.array("nodes").count
         updatedAt = (json["updated_at"] as? NSNumber)?.int64Value ?? 0
+        nodes = json.objects("nodes")
+        edges = json.objects("edges")
+        viewport = json.object("viewport")
     }
+}
+
+struct WorkflowSchedule: Identifiable {
+    let id: String
+    var schedule: String
+    var timezone: String
+    var enabled: Bool
+    var input: String
+    var nextRun: Int64?
+    var error: String
+    init(_ json: JSON) { id = json.string("id"); schedule = json.string("schedule"); timezone = json.string("timezone"); enabled = json.bool("enabled"); input = json.string("input"); nextRun = (json["next_run_at"] as? NSNumber)?.int64Value; error = json.string("last_error") }
 }
 
 struct WorkflowRun: Identifiable, Hashable {

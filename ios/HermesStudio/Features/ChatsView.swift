@@ -14,12 +14,13 @@ struct ChatsView: View {
     @State private var editSession: SessionSummary?
     @State private var newTitle = ""
     @State private var creatingSession = false
+    @State private var selectedIDs: Set<String> = []; @State private var manageSession: SessionSummary?; @State private var pageLimit = 100
 
     var body: some View {
         Group {
             if loading && sessions.isEmpty { ProgressView("Loading conversations…") }
             else {
-                List {
+                List(selection: $selectedIDs) {
                     Section {
                         HStack(spacing: 10) {
                             Menu {
@@ -63,14 +64,17 @@ struct ChatsView: View {
                     }
                     ForEach(filtered) { session in
                         NavigationLink { ConversationView(session: session) } label: { SessionRow(session: session, profile: store.profiles.first { $0.name == session.profile } ?? store.profile) }
+                            .tag(session.id)
                             .swipeActions(edge: .trailing) { Button(role: .destructive) { Task { await delete(session) } } label: { Label("Delete", systemImage: "trash") }; Button { Task { await archive(session, archived: !session.archived) } } label: { Label(session.archived ? "Unarchive" : "Archive", systemImage: session.archived ? "tray.and.arrow.up" : "archivebox") }.tint(.orange); Button { newTitle = session.title; editSession = session } label: { Label("Rename", systemImage: "pencil") }.tint(.blue) }
                             .contextMenu {
                                 Menu("Move to category") {
                                     Button("No category") { Task { await assign(session, category: nil) } }
                                     ForEach(categories) { category in Button(category.name) { Task { await assign(session, category: category.id) } } }
                                 }
+                                Button("Session settings") { manageSession = session }
                             }
                     }
+                    if !showArchived && search.isEmpty && sessions.count >= pageLimit { Button("Load more") { pageLimit += 100; Task { await load() } }.frame(maxWidth: .infinity) }
                 }.listStyle(.insetGrouped).refreshable { await load() }
             }
         }
@@ -83,6 +87,8 @@ struct ChatsView: View {
                 ToolbarItem(placement: .topBarLeading) { ProfileMenu() }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if !selectedIDs.isEmpty { Button(role: .destructive) { Task { await batchDelete() } } label: { Image(systemName: "trash") } }
+                EditButton()
                 Button { showArchived.toggle() } label: { Image(systemName: showArchived ? "tray.full.fill" : "archivebox") }.accessibilityLabel(showArchived ? "Show active" : "Show archived")
                 Button { managingCategories = true } label: { Image(systemName: "folder.badge.gearshape") }.accessibilityLabel("Manage categories")
                 Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh")
@@ -92,6 +98,7 @@ struct ChatsView: View {
         .task(id: "\(profileFilter)|\(search)|\(showArchived)") { if !search.isEmpty { try? await Task.sleep(for: .milliseconds(300)) }; guard !Task.isCancelled else { return }; await load() }
         .sheet(isPresented: $managingCategories) { NavigationStack { SessionCategoriesView(categories: $categories) }.environmentObject(store) }
         .sheet(isPresented: $creatingSession) { NewCodingSessionView(categories: categories).environmentObject(store) }
+        .sheet(item: $manageSession) { item in SessionManagementView(session: item, categories: categories) { await load() }.environmentObject(store) }
         .alert("Rename conversation", isPresented: Binding(get: { editSession != nil }, set: { if !$0 { editSession = nil } })) {
             TextField("Title", text: $newTitle)
             Button("Save") { guard let editSession else { return }; Task { try? await store.api.renameSession(editSession.id, title: newTitle); await load() } }
@@ -119,13 +126,14 @@ struct ChatsView: View {
                 var archived: [SessionSummary] = []
                 for id in archivedIDs { if let item = try? await store.api.sessionSummary(id, profile: profileFilter.nilIfEmpty), item.archived { archived.append(item) } }
                 sessions = archived
-            } else if search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sessions = try await store.api.sessions(profile: profileFilter.nilIfEmpty) }
+            } else if search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sessions = try await store.api.sessions(profile: profileFilter.nilIfEmpty, limit: pageLimit) }
             else { sessions = try await store.api.searchSessions(search, profile: profileFilter.nilIfEmpty) }
             categories = try await categoryRequest
         } catch { store.errorMessage = error.localizedDescription }
         loading = false
     }
     private func delete(_ session: SessionSummary) async { do { try await store.api.deleteSession(session.id); sessions.removeAll { $0.id == session.id } } catch { store.errorMessage = error.localizedDescription } }
+    private func batchDelete() async { let targets = sessions.filter { selectedIDs.contains($0.id) }; do { _ = try await store.api.batchDeleteSessions(targets); selectedIDs = []; await load() } catch { store.errorMessage = error.localizedDescription } }
     private func archive(_ session: SessionSummary, archived: Bool) async {
         do {
             try await store.api.setSessionArchived(session.id, archived: archived)
@@ -136,6 +144,15 @@ struct ChatsView: View {
         } catch { store.errorMessage = error.localizedDescription }
     }
     private func assign(_ session: SessionSummary, category: Int?) async { do { try await store.api.setSessionCategory(session.id, categoryID: category); await load() } catch { store.errorMessage = error.localizedDescription } }
+}
+
+private struct SessionManagementView: View {
+    @EnvironmentObject private var store: AppStore; @Environment(\.dismiss) private var dismiss
+    let session: SessionSummary; let categories: [SessionCategory]; let reload: () async -> Void
+    @State private var workspace = ""; @State private var categoryID = 0; @State private var push = true; @State private var folders: [String] = []; @State private var exportURL: URL?
+    var body: some View { NavigationStack { Form { Section("Workspace") { Picker("Recent workspaces", selection: $workspace) { Text("No workspace").tag(""); ForEach(folders, id: \.self) { Text($0).tag($0) } }; TextField("Workspace path", text: $workspace).textInputAutocapitalization(.never) }; Section("Organization") { Picker("Category", selection: $categoryID) { Text("No category").tag(0); ForEach(categories) { Text($0.name).tag($0.id) } }; Toggle("Push completion notification", isOn: $push) }; Section("Export") { Button("Prepare full JSON") { Task { await export(mode: "full", ext: "json") } }; Button("Prepare compressed text") { Task { await export(mode: "compressed", ext: "txt") } }; if let exportURL { ShareLink(item: exportURL) { Label("Share export", systemImage: "square.and.arrow.up") } } }; Section { Button("Save") { Task { await save() } }.frame(maxWidth: .infinity) } }.navigationTitle("Session settings").toolbar { Button("Done") { dismiss() } }.task { workspace = session.workspace; categoryID = session.categoryID ?? 0; push = session.pushEnabled; folders = (try? await store.api.workspaceFolders()) ?? [] } } }
+    private func save() async { do { try await store.api.setSessionWorkspace(session.id, workspace: workspace.nilIfEmpty); try await store.api.setSessionCategory(session.id, categoryID: categoryID > 0 ? categoryID : nil); try await store.api.setSessionPush(session.id, enabled: push); await reload(); store.notify(String(localized: "Session updated")) } catch { store.errorMessage = error.localizedDescription } }
+    private func export(mode: String, ext: String) async { do { let url = FileManager.default.temporaryDirectory.appendingPathComponent("session-\(session.id).\(ext)"); try await store.api.exportSession(session.id, mode: mode, ext: ext).write(to: url, options: .atomic); exportURL = url } catch { store.errorMessage = error.localizedDescription } }
 }
 
 private struct NewCodingSessionView: View {
