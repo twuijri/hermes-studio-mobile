@@ -150,7 +150,7 @@ The phone should not install or directly execute Hermes, Claude Code, Codex, or 
 ### Compile, navigation, localization, and test risks
 
 - **Android is currently unbuildable.** CI run `33340396613` failed at Kotlin compilation with invalid `weight` imports, a syntax error in `HermesApi.kt`, missing `action_send`, unresolved Material icons, and parse/unresolved-symbol errors in `StudioWorkspaceScreens.kt`. No later Android run had validated `2d3396f` at audit time.
-- **The combined iOS release build failed.** CI run `33340396612` found type errors in `APIClient.swift` and `Models.swift`. Commit `2d3396f` attempts to fix those errors and its replacement iOS run was still in progress at audit time, so a green iOS build cannot yet be claimed.
+- **iOS is currently unbuildable.** The combined run `33340396612` failed in `APIClient.swift` and `Models.swift`. After the attempted fixes, replacement run `33340468556` still failed at `Models.swift:460`: `json.int("useCount", "use_count")` calls an overload requiring `default:` and passes a string where an integer is expected.
 - Large single-line SwiftUI and Compose screens contain many nested generic/view-builder expressions. They are compile-time/type-check risk hotspots and are difficult to test independently.
 - Most new screens are reachable through Agent/More Settings, but several implemented API helpers have no complete navigation surface; hidden Pets routes remain compiled.
 - English and Arabic resource key inventories are broadly present, but many Android and iOS values are assembled from raw server identifiers or hard-coded English strings. Locale presence alone does not prove Arabic translation or RTL correctness.
