@@ -789,4 +789,5 @@
     <string name="profile_make_active">Make active profile</string><string name="profile_export">Export profile</string>
     <string name="ekko_skill_new">New Ekko skill</string>
     <string name="profile_import">Import profile</string><string name="profile_avatar">Choose profile avatar</string><string name="profile_avatar_clear">Remove profile avatar</string>
+    <string name="profile_export_started">Profile export started</string><string name="ekko_external_dirs">External directories</string><string name="revoke_connection">Revoke app connection?</string><string name="manual_device">Add device manually</string><string name="block">Block</string><string name="unblock">Unblock</string>
 </resources>

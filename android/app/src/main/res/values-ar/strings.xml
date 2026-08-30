@@ -788,4 +788,5 @@
     <string name="profile_make_active">جعله البروفايل النشط</string><string name="profile_export">تصدير البروفايل</string>
     <string name="ekko_skill_new">مهارة Ekko جديدة</string>
     <string name="profile_import">استيراد بروفايل</string><string name="profile_avatar">اختيار صورة البروفايل</string><string name="profile_avatar_clear">حذف صورة البروفايل</string>
+    <string name="profile_export_started">بدأ تنزيل البروفايل</string><string name="ekko_external_dirs">المجلدات الخارجية</string><string name="revoke_connection">إلغاء تفويض التطبيق؟</string><string name="manual_device">إضافة جهاز يدويًا</string><string name="block">حظر</string><string name="unblock">إلغاء الحظر</string>
 </resources>

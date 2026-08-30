@@ -113,6 +113,7 @@ dependencies {
     implementation("com.caverock:androidsvg-aar:1.4")
     // Remote Petdex previews and active data-URI spritesheets.
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("com.google.zxing:core:3.5.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")

@@ -804,7 +804,8 @@ class HermesApi(
     }
     fun createAppAuthorization(cloud: Boolean): AppAuthorization {
         val result = call("/api/app-connections/authorization-codes/${if (cloud) "cloud" else "lan"}", "POST", JSONObject())
-        return AppAuthorization(firstNonBlank(result, "matching_code", "authorization_code", "code") ?: "", result.firstLong("expires_at", "expiresAt") ?: 0, result.optString("connection_type").ifBlank { if (cloud) "cloud" else "lan" })
+        val code = firstNonBlank(result, "matching_code", "authorization_code", "code") ?: ""
+        return AppAuthorization(code, result.firstLong("expires_at", "expiresAt") ?: 0, result.optString("connection_type").ifBlank { if (cloud) "cloud" else "lan" }, firstNonBlank(result, "qr_payload", "qrPayload") ?: code)
     }
     fun revokeAppConnection(id: Int) { call("/api/app-connections/$id", "DELETE") }
 
@@ -824,6 +825,19 @@ class HermesApi(
     fun importEkkoSkill(profile: String, bytes: ByteArray, filename: String) { multipart("/api/ekko/skills/import", "file", bytes, filename, "application/zip", emptyMap(), profile) }
     fun ekkoExternalDirectories(profile: String): List<String> = strings(call("/api/ekko/skills/external-directories", profile = profile).optJSONArray("directories"))
     fun saveEkkoExternalDirectories(profile: String, dirs: List<String>) { call("/api/ekko/skills/external-directories", "PUT", JSONObject().put("directories", JSONArray(dirs)), profile) }
+    fun ekkoSkillFiles(profile: String, name: String): List<String> {
+        val array = call("/api/ekko/skills/${enc(name)}/files", profile = profile).optJSONArray("files") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> when (val value = array.opt(i)) { is String -> value; is JSONObject -> firstNonBlank(value, "path", "name"); else -> null } }
+    }
+    fun ekkoSkillFile(profile: String, name: String, path: String): String = call("/api/ekko/skills/${enc(name)}/file?path=${enc(path)}", profile = profile).optString("content")
+
+    fun devicePairingLink(): String { val root = call("/api/devices/pairing-link"); return firstNonBlank(root, "url", "link", "pairingLink") ?: "" }
+    fun manualDeviceRequest(url: String) { call("/api/devices/manual-request", "POST", JSONObject().put("url", url)) }
+    fun peerConnections(): List<PeerConnection> {
+        val array = call("/api/devices/peer-connections").optJSONArray("connections") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item -> val id = firstNonBlank(item, "id", "connectionId") ?: return@let null; PeerConnection(id, firstNonBlank(item, "device_id", "deviceId") ?: "", firstNonBlank(item, "computer_name", "name") ?: id.take(8)) } }
+    }
+    fun disconnectPeer(id: String) { call("/api/devices/peer-connections/${enc(id)}/disconnect", "POST", JSONObject()) }
 
     /** POST /api/hermes/sessions/{id}/model */
     fun setSessionModel(sessionId: String, model: String, provider: String?) {

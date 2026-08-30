@@ -201,6 +201,14 @@ data class UiState(
     val studioDevices: List<StudioDevice> = emptyList(),
     val appConnections: List<AppConnection> = emptyList(),
     val appAuthorization: AppAuthorization? = null,
+    val ekkoExternalDirectories: List<String> = emptyList(),
+    val ekkoOpenSkill: SkillInfo? = null,
+    val ekkoSkillContent: String = "",
+    val ekkoSkillFiles: List<String> = emptyList(),
+    val ekkoSkillFilePreviewPath: String? = null,
+    val ekkoSkillFilePreviewContent: String = "",
+    val pairingLink: String = "",
+    val peerConnections: List<PeerConnection> = emptyList(),
 )
 
 data class WeixinQrUi(
@@ -461,8 +469,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val memory = runCatching { withContext(Dispatchers.IO) { api.ekkoMemories(profile) } }
             val skills = runCatching { withContext(Dispatchers.IO) { api.ekkoSkills(profile) } }
             val mcp = runCatching { withContext(Dispatchers.IO) { api.ekkoMcpServers(profile) } }
-            val error = memory.exceptionOrNull() ?: skills.exceptionOrNull() ?: mcp.exceptionOrNull()
-            _state.update { it.copy(ekkoMemories = memory.getOrDefault(emptyList()), ekkoSkills = skills.getOrDefault(emptyList()), ekkoMcpServers = mcp.getOrDefault(emptyList()), loadingEkko = false, error = error?.readableMessage(localized)) }
+            val directories = runCatching { withContext(Dispatchers.IO) { api.ekkoExternalDirectories(profile) } }
+            val error = memory.exceptionOrNull() ?: skills.exceptionOrNull() ?: mcp.exceptionOrNull() ?: directories.exceptionOrNull()
+            _state.update { it.copy(ekkoMemories = memory.getOrDefault(emptyList()), ekkoSkills = skills.getOrDefault(emptyList()), ekkoMcpServers = mcp.getOrDefault(emptyList()), ekkoExternalDirectories = directories.getOrDefault(emptyList()), loadingEkko = false, error = error?.readableMessage(localized)) }
         }
     }
 
@@ -493,13 +502,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun openLog(log: StudioLogFile) = launchWork(work = { api.studioLog(log.name, currentProfile()) }, onSuccess = { entries -> _state.update { it.copy(openLog = log, logEntries = entries) } })
     fun closeLog() = _state.update { it.copy(openLog = null, logEntries = emptyList()) }
 
-    fun openConnections() = launchWork(work = { Triple(api.appRelayStatus(), api.studioDevices(), api.appConnections()) }, onSuccess = { (relay, devices, connections) -> _state.update { it.copy(screen = Screen.Connections, appRelay = relay, studioDevices = devices, appConnections = connections, error = null) } })
+    fun openConnections() = launchWork(work = { (Triple(api.appRelayStatus(), api.studioDevices(), api.appConnections())) to (runCatching { api.devicePairingLink() }.getOrDefault("") to runCatching { api.peerConnections() }.getOrDefault(emptyList())) }, onSuccess = { data -> val (primary, extra) = data; val (relay, devices, connections) = primary; _state.update { it.copy(screen = Screen.Connections, appRelay = relay, studioDevices = devices, appConnections = connections, pairingLink = extra.first, peerConnections = extra.second, error = null) } })
     fun connectRelay() = launchWork(work = { api.connectAppRelay() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
     fun refreshRelayCode() = launchWork(work = { api.refreshAppRelayCode() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
     fun disconnectRelay() = launchWork(work = { api.disconnectAppRelay() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
     fun deviceAction(device: StudioDevice, action: String) = launchWork(work = { api.deviceAction(device.id, action) }, onSuccess = { openConnections() })
     fun createAppAuthorization(cloud: Boolean) = launchWork(work = { api.createAppAuthorization(cloud) }, onSuccess = { auth -> _state.update { it.copy(appAuthorization = auth) } })
     fun revokeAppConnection(connection: AppConnection) = launchWork(work = { api.revokeAppConnection(connection.id) }, onSuccess = { openConnections() })
+    fun manualDeviceRequest(url: String) = launchWork(work = { api.manualDeviceRequest(url) }, onSuccess = { openConnections() })
+    fun disconnectPeer(connection: PeerConnection) = launchWork(work = { api.disconnectPeer(connection.id) }, onSuccess = { openConnections() })
 
     fun switchActiveProfile(name: String) = launchWork(work = { api.switchActiveProfile(name) }, onSuccess = { selectProfile(name); refreshProfiles() })
     fun importProfile(bytes: ByteArray, name: String) = launchWork(work = { api.importProfile(bytes, name) }, onSuccess = { refreshProfiles() })
@@ -510,6 +521,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun saveEkkoSkill(name: String, content: String, creating: Boolean) = launchWork(work = { if (creating) api.createEkkoSkill(currentProfile(), name, content) else api.saveEkkoSkill(currentProfile(), name, content) }, onSuccess = { openEkkoHub() })
     fun deleteEkkoSkill(skill: SkillInfo) = launchWork(work = { api.deleteEkkoSkill(currentProfile(), skill.name) }, onSuccess = { openEkkoHub() })
     fun importEkkoSkill(bytes: ByteArray, name: String) = launchWork(work = { api.importEkkoSkill(currentProfile(), bytes, name) }, onSuccess = { openEkkoHub() })
+    fun openEkkoSkill(skill: SkillInfo) = launchWork(work = { Triple(api.ekkoSkillDetail(currentProfile(), skill.name), api.ekkoSkillFiles(currentProfile(), skill.name), skill) }, onSuccess = { (content, files, selected) -> _state.update { it.copy(ekkoOpenSkill = selected, ekkoSkillContent = content, ekkoSkillFiles = files) } })
+    fun closeEkkoSkill() = _state.update { it.copy(ekkoOpenSkill = null, ekkoSkillContent = "", ekkoSkillFiles = emptyList(), ekkoSkillFilePreviewPath = null, ekkoSkillFilePreviewContent = "") }
+    fun openEkkoSkillFile(path: String) { val skill = _state.value.ekkoOpenSkill ?: return; launchWork(work = { api.ekkoSkillFile(currentProfile(), skill.name, path) }, onSuccess = { content -> _state.update { it.copy(ekkoSkillFilePreviewPath = path, ekkoSkillFilePreviewContent = content) } }) }
+    fun saveExternalDirectories(lines: String) = launchWork(work = { api.saveEkkoExternalDirectories(currentProfile(), lines.lines().map(String::trim).filter(String::isNotBlank)) }, onSuccess = { openEkkoHub() })
+
+    fun downloadProfile(name: String) {
+        val request = DownloadManager.Request(Uri.parse(api.profileExportUrl(name))).setTitle("hermes-profile-$name.tar.gz").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "hermes-profile-$name.tar.gz")
+        store.token.takeIf(String::isNotBlank)?.let { request.addRequestHeader("Authorization", "Bearer $it") }
+        getApplication<Application>().getSystemService(DownloadManager::class.java)?.enqueue(request)
+        _state.update { it.copy(notice = str(R.string.profile_export_started)) }
+    }
 
     fun startGlobalAgentConversation() {
         startNewConversation(AgentRuntimeSelection("ekko-agent", "ekko", "Global Agent", globalAgent = true))

@@ -1566,7 +1566,7 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
                 Text(stringResource(R.string.profile_restart), Modifier.fillMaxWidth())
             }
             TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; viewModel.switchActiveProfile(profile.name) }) { Text(stringResource(R.string.profile_make_active), Modifier.fillMaxWidth()) }
-            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.profileExportUrl(profile.name)))) }) { Text(stringResource(R.string.profile_export), Modifier.fillMaxWidth()) }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; viewModel.downloadProfile(profile.name) }) { Text(stringResource(R.string.profile_export), Modifier.fillMaxWidth()) }
             TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { avatarTarget = profile.name; manage = null; avatarPicker.launch("image/*") }) { Text(stringResource(R.string.profile_avatar), Modifier.fillMaxWidth()) }
             TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; viewModel.clearProfileAvatar(profile.name) }) { Text(stringResource(R.string.profile_avatar_clear), Modifier.fillMaxWidth()) }
         }

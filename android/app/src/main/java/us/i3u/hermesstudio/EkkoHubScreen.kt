@@ -1,5 +1,7 @@
 package us.i3u.hermesstudio
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -51,9 +53,12 @@ fun EkkoHubScreen(state: UiState, viewModel: AppViewModel) {
     var editMcp by remember { mutableStateOf<EkkoMcpServer?>(null) }
     var newMcp by remember { mutableStateOf(false) }
     var newSkill by remember { mutableStateOf(false) }
+    var editDirectories by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val importSkill = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri ?: return@rememberLauncherForActivityResult; val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult; viewModel.importEkkoSkill(bytes, uri.lastPathSegment ?: "skill.zip") }
     if (newSkill) EkkoSkillDialog({ newSkill = false }) { name, content -> newSkill = false; viewModel.saveEkkoSkill(name, content, true) }
+    if (editDirectories) { var dirs by remember { mutableStateOf(state.ekkoExternalDirectories.joinToString("\n")) }; AlertDialog(onDismissRequest = { editDirectories = false }, title = { Text(stringResource(R.string.ekko_external_dirs)) }, text = { OutlinedTextField(dirs, { dirs = it }, minLines = 6) }, confirmButton = { TextButton(onClick = { editDirectories = false; viewModel.saveExternalDirectories(dirs) }) { Text(stringResource(R.string.action_save)) } }, dismissButton = { TextButton(onClick = { editDirectories = false }) { Text(stringResource(R.string.action_cancel)) } }) }
+    state.ekkoOpenSkill?.let { skill -> var content by remember(skill.name, state.ekkoSkillContent) { mutableStateOf(state.ekkoSkillContent) }; AlertDialog(onDismissRequest = viewModel::closeEkkoSkill, title = { Text(skill.name) }, text = { Column { Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState())) { state.ekkoSkillFiles.forEach { path -> TextButton(onClick = { viewModel.openEkkoSkillFile(path) }) { Text(path.substringAfterLast('/')) } } }; OutlinedTextField(content, { content = it }, minLines = 10); state.ekkoSkillFilePreviewPath?.let { path -> Text(path, style = MaterialTheme.typography.labelMedium); Text(state.ekkoSkillFilePreviewContent, style = MaterialTheme.typography.bodySmall) } } }, confirmButton = { TextButton(onClick = { viewModel.saveEkkoSkill(skill.name, content, false); viewModel.closeEkkoSkill() }) { Text(stringResource(R.string.action_save)) } }, dismissButton = { TextButton(onClick = viewModel::closeEkkoSkill) { Text(stringResource(R.string.action_cancel)) } }) }
     editMemory?.let { memory -> EkkoMemoryDialog(memory, { editMemory = null }, { title, content -> editMemory = null; viewModel.saveEkkoMemory(memory, title, content) }) }
     if (newMcp || editMcp != null) {
         val original = editMcp?.name
@@ -66,8 +71,8 @@ fun EkkoHubScreen(state: UiState, viewModel: AppViewModel) {
             items(state.ekkoMemories, key = { it.id }) { memory ->
                 HubCard { Column(Modifier.weight(1f)) { Text(memory.title.ifBlank { memory.id }, fontWeight = FontWeight.Bold); Text(memory.content, maxLines = 3); Text(memory.status + " · r" + memory.revision, style = MaterialTheme.typography.labelSmall) }; TextButton(onClick = { editMemory = memory }) { Text(stringResource(R.string.action_edit)) }; TextButton(onClick = { viewModel.deleteEkkoMemory(memory) }) { Text(stringResource(R.string.action_delete)) } }
             }
-            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { SectionTitle(stringResource(R.string.ekko_skills_title), state.ekkoSkills.sumOf { it.skills.size }, Modifier.weight(1f)); TextButton(onClick = { newSkill = true }) { Text(stringResource(R.string.action_add)) }; TextButton(onClick = { importSkill.launch("application/zip") }) { Text(stringResource(R.string.files_upload)) } } }
-            state.ekkoSkills.flatMap { it.skills }.forEach { skill -> item(key = "skill-${skill.name}") { HubCard { Column(Modifier.weight(1f)) { Text(skill.name, fontWeight = FontWeight.Bold); Text(skill.description, maxLines = 2) }; Switch(skill.enabled, { viewModel.toggleEkkoSkill(skill) }); TextButton(onClick = { viewModel.deleteEkkoSkill(skill) }) { Text(stringResource(R.string.action_delete)) } } } }
+            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { SectionTitle(stringResource(R.string.ekko_skills_title), state.ekkoSkills.sumOf { it.skills.size }, Modifier.weight(1f)); TextButton(onClick = { editDirectories = true }) { Text(stringResource(R.string.ekko_external_dirs)) }; TextButton(onClick = { newSkill = true }) { Text(stringResource(R.string.action_add)) }; TextButton(onClick = { importSkill.launch("application/zip") }) { Text(stringResource(R.string.files_upload)) } } }
+            state.ekkoSkills.flatMap { it.skills }.forEach { skill -> item(key = "skill-${skill.name}") { HubCard { Column(Modifier.weight(1f).clickable { viewModel.openEkkoSkill(skill) }) { Text(skill.name, fontWeight = FontWeight.Bold); Text(skill.description, maxLines = 2) }; Switch(skill.enabled, { viewModel.toggleEkkoSkill(skill) }); TextButton(onClick = { viewModel.deleteEkkoSkill(skill) }) { Text(stringResource(R.string.action_delete)) } } } }
             item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { SectionTitle(stringResource(R.string.ekko_mcp_title), state.ekkoMcpServers.size, Modifier.weight(1f)); Button(onClick = { newMcp = true }) { Text(stringResource(R.string.action_add)) } } }
             items(state.ekkoMcpServers, key = { it.name }) { server -> HubCard { Column(Modifier.weight(1f)) { Text(server.name, fontWeight = FontWeight.Bold); Text(server.transport) }; Switch(server.enabled, { viewModel.toggleEkkoMcp(server) }); TextButton(onClick = { viewModel.testEkkoMcp(server) }) { Text(stringResource(R.string.action_test)) }; TextButton(onClick = { editMcp = server }) { Text(stringResource(R.string.action_edit)) }; TextButton(onClick = { viewModel.deleteEkkoMcp(server) }) { Text(stringResource(R.string.action_delete)) } } }
         }

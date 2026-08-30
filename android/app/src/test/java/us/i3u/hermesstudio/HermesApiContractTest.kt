@@ -194,8 +194,10 @@ class HermesApiContractTest {
         assertEquals("Pixel", api.appConnections().single().name)
         assertEquals("/api/app-connections", server.takeRequest().path)
 
-        enqueue("""{"connection_type":"cloud","matching_code":"483921","expires_at":123} """)
-        assertEquals("483921", api.createAppAuthorization(true).code)
+        enqueue("""{"connection_type":"cloud","matching_code":"483921","expires_at":123,"qr_payload":"hermes://connect/abc"} """)
+        val authorization = api.createAppAuthorization(true)
+        assertEquals("483921", authorization.code)
+        assertEquals("hermes://connect/abc", authorization.qrPayload)
         assertEquals("/api/app-connections/authorization-codes/cloud", server.takeRequest().path)
     }
 
@@ -206,6 +208,30 @@ class HermesApiContractTest {
         val request = server.takeRequest()
         assertEquals("/api/hermes/profiles/active", request.path)
         assertEquals("manager", JSONObject(request.body.readUtf8()).getString("name"))
+    }
+
+    @Test
+    fun `Ekko skill files and external directories use canonical endpoints`() {
+        enqueue("""{"ok":true,"files":[{"path":"SKILL.md"},{"path":"references/api.md"}]}""")
+        assertEquals(listOf("SKILL.md", "references/api.md"), api.ekkoSkillFiles("manager", "research"))
+        assertEquals("/api/ekko/skills/research/files", server.takeRequest().path)
+        enqueue("""{"ok":true}""")
+        api.saveEkkoExternalDirectories("manager", listOf("/opt/skills"))
+        assertEquals("/api/ekko/skills/external-directories", server.takeRequest().path)
+    }
+
+    @Test
+    fun `device pairing and peer disconnect use Studio controls`() {
+        enqueue("""{"link":"https://studio/#/hermes/devices?pairing_code=123"}""")
+        assertEquals("https://studio/#/hermes/devices?pairing_code=123", api.devicePairingLink())
+        enqueue("""{"devices":[]}""")
+        api.manualDeviceRequest("https://remote.example/#/hermes/devices?pairing_code=456")
+        val manual = server.takeRequest()
+        assertEquals("/api/devices/manual-request", manual.path)
+        assertEquals("https://remote.example/#/hermes/devices?pairing_code=456", JSONObject(manual.body.readUtf8()).getString("url"))
+        enqueue("""{"ok":true}""")
+        api.disconnectPeer("peer-1")
+        assertEquals("/api/devices/peer-connections/peer-1/disconnect", server.takeRequest().path)
     }
 
     @Test

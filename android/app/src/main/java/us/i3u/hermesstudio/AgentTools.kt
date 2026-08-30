@@ -197,7 +197,9 @@ data class StudioLogEntry(val timestamp: String, val level: String, val logger: 
 data class AppRelayStatus(val connected: Boolean, val machineId: String, val pairingCode: String, val expiresAt: Long, val route: String, val relayUrl: String)
 data class StudioDevice(val id: String, val name: String, val address: String, val inbound: String, val outbound: String)
 data class AppConnection(val id: Int, val name: String, val type: String, val active: Boolean, val online: Boolean)
-data class AppAuthorization(val code: String, val expiresAt: Long, val type: String)
+data class AppAuthorization(val code: String, val expiresAt: Long, val type: String, val qrPayload: String = code)
+data class EkkoSkillFile(val path: String, val content: String = "")
+data class PeerConnection(val id: String, val deviceId: String, val name: String)
 
 data class PluginsUiState(
     val loading: Boolean = false,
