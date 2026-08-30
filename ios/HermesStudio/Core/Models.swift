@@ -290,6 +290,13 @@ struct ProviderSummary: Identifiable, Hashable {
     init(_ json: JSON) { id = json.string("provider", "id", "provider_key"); label = json.string("label").nilIfEmpty ?? id; baseURL = json.string("base_url"); models = json.strings("models"); credentialConfigured = !json.string("api_key").isEmpty || json.bool("credential_configured"); refreshable = json.bool("model_refreshable") }
 }
 
+struct StudioFileItem: Identifiable, Hashable { let id: String; var name: String; var path: String; var isDirectory: Bool; var size: Int; var modified: String; init(_ j: JSON) { path = j.string("path"); id = path; name = j.string("name"); isDirectory = j["isDir"] == nil ? j.bool("is_dir") : j.bool("isDir"); size = j.int("size"); modified = j.string("modTime", "modified") } }
+struct StudioLogFile: Identifiable, Hashable { let id: String; var name: String; var size: String; var modified: String; init(_ j: JSON) { name = j.string("name"); id = name; size = j.string("size"); modified = j.string("modified") } }
+struct StudioLogEntry: Identifiable, Hashable { let id = UUID(); var timestamp: String; var level: String; var logger: String; var message: String; var raw: String; init(_ j: JSON) { timestamp = j.string("timestamp"); level = j.string("level"); logger = j.string("logger"); message = j.string("message"); raw = j.string("raw") } }
+struct AppRelayInfo: Hashable { var connected: Bool; var machineID: String; var pairingCode: String; var route: String; var relayURL: String; init(_ j: JSON) { connected = j.bool("connected"); machineID = j.string("machineId"); pairingCode = j.string("pairingCode"); route = j.string("route"); relayURL = j.string("relayUrl") } }
+struct AppConnectionItem: Identifiable, Hashable { let id: Int; var name: String; var model: String; var type: String; var active: Bool; var online: Bool; init(_ j: JSON) { id = j.int("id"); name = j.string("device_name"); model = [j.string("device_brand"), j.string("device_model")].filter { !$0.isEmpty }.joined(separator: " "); type = j.string("connection_type"); active = j.bool("active"); online = j.bool("online") } }
+struct StudioDevice: Identifiable, Hashable { let id: String; var name: String; var url: String; var online: Bool; var inbound: String; var outbound: String; var version: String; init(_ j: JSON) { id = j.string("id", "device_id"); name = j.string("computer_name").nilIfEmpty ?? id; url = j.string("url"); online = j.bool("online"); inbound = j.string("inbound_status"); outbound = j.string("outbound_status"); version = j.string("hermes_web_ui_version") } }
+
 struct Message: Identifiable, Hashable {
     let id: String
     let role: String
@@ -595,6 +602,8 @@ struct UsageStats {
     let sessions: Int
     let cost: Double
     let models: [UsageBreakdown]
+    let agents: [UsageBreakdown]
+    let daily: [UsageBreakdown]
 }
 
 struct RuntimePerformance {

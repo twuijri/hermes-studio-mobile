@@ -11,6 +11,9 @@ struct AgentHubView: View {
                 NavigationLink { AgentManagerView() } label: { AgentToolRow(icon: "cpu", color: .blue, title: "Agents", detail: "Choose and manage every agent runtime") }
                 NavigationLink { GlobalAgentView() } label: { AgentToolRow(icon: "globe.desk.fill", color: .mint, title: "Global Agent", detail: "Global sessions and remote agent control") }
                 NavigationLink { WorkflowsView() } label: { AgentToolRow(icon: "point.3.connected.trianglepath.dotted", color: .orange, title: "Workflows", detail: "Run automations and review their history") }
+                NavigationLink { StudioFilesView() } label: { AgentToolRow(icon: "folder.fill", color: .blue, title: "Files", detail: "Browse and edit Studio workspace files") }
+                NavigationLink { StudioLogsView() } label: { AgentToolRow(icon: "doc.text.magnifyingglass", color: .gray, title: "Logs", detail: "Inspect Studio logs and errors") }
+                NavigationLink { StudioConnectionsView() } label: { AgentToolRow(icon: "point.3.connected.trianglepath.dotted", color: .green, title: "Connections", detail: "App Relay, paired apps and devices") }
                 NavigationLink { InsightsView() } label: { AgentToolRow(icon: "chart.xyaxis.line", color: .purple, title: "Insights", detail: "Token usage and Studio runtime") }
                 NavigationLink { CronJobsView() } label: { AgentToolRow(icon: "calendar.badge.clock", color: .blue, title: "Scheduled Jobs", detail: "Automations, schedules and delivery") }
                 NavigationLink { KanbanView() } label: { AgentToolRow(icon: "rectangle.3.group", color: .orange, title: "Kanban", detail: "Plan work with a touch-first board") }
@@ -243,4 +246,59 @@ private struct WorkflowRunRow: View {
     private func stop() async { do { try await store.api.stopWorkflow(workflow.id, runID: run.id); await reload() } catch { store.errorMessage = error.localizedDescription } }
     private func delete() async { do { try await store.api.deleteWorkflowRun(workflow.id, runID: run.id); await reload() } catch { store.errorMessage = error.localizedDescription } }
     private func approve(_ node: WorkflowRunNode, _ approved: Bool) async { do { try await store.api.approveWorkflowNode(workflow.id, runID: run.id, node: node, approved: approved); await reload() } catch { store.errorMessage = error.localizedDescription } }
+}
+
+struct StudioFilesView: View {
+    @EnvironmentObject private var store: AppStore
+    let path: String
+    @State private var files: [StudioFileItem] = []; @State private var loading = true; @State private var importing = false; @State private var newFolder = false; @State private var folderName = ""; @State private var actionFile: StudioFileItem?; @State private var actionName = ""
+    init(path: String = "") { self.path = path }
+    var body: some View { List { if loading { ProgressView() }; ForEach(files) { file in Group { if file.isDirectory { NavigationLink { StudioFilesView(path: file.path) } label: { row(file) } } else { NavigationLink { StudioFileEditor(file: file) } label: { row(file) } } }.swipeActions { Button(role: .destructive) { Task { await delete(file) } } label: { Label("Delete", systemImage: "trash") }; Button { actionFile = file; actionName = file.path } label: { Label("More", systemImage: "ellipsis") } } } }.navigationTitle(path.isEmpty ? "Files" : URL(fileURLWithPath: path).lastPathComponent).overlay { if !loading && files.isEmpty { ContentUnavailableView("Empty folder", systemImage: "folder") } }.task { await load() }.refreshable { await load() }.toolbar { ToolbarItemGroup(placement: .topBarTrailing) { Button { newFolder = true } label: { Image(systemName: "folder.badge.plus") }; Button { importing = true } label: { Image(systemName: "square.and.arrow.down") } } }.fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in if case let .success(urls) = result { Task { await upload(urls) } } }.alert("New folder", isPresented: $newFolder) { TextField("Name", text: $folderName); Button("Create") { Task { await mkdir() } }; Button("Cancel", role: .cancel) {} }.confirmationDialog("File actions", isPresented: Binding(get: { actionFile != nil }, set: { if !$0 { actionFile = nil } })) { if let file = actionFile { Button("Rename or move") { actionName = file.path; renamePrompt = true }; Button("Copy") { actionName = file.path + "-copy"; copyPrompt = true }; if let url = store.api.studioFileURL(file.path, profile: store.selectedProfile) { Link("Open externally", destination: url) } }; Button("Cancel", role: .cancel) {} }.alert("Rename or move", isPresented: $renamePrompt) { TextField("Path", text: $actionName); Button("Save") { Task { await rename() } }; Button("Cancel", role: .cancel) {} }.alert("Copy file", isPresented: $copyPrompt) { TextField("Destination path", text: $actionName); Button("Copy") { Task { await copy() } }; Button("Cancel", role: .cancel) {} } }
+    @State private var renamePrompt = false; @State private var copyPrompt = false
+    private func row(_ file: StudioFileItem) -> some View { HStack { Image(systemName: file.isDirectory ? "folder.fill" : "doc.fill").foregroundStyle(file.isDirectory ? .blue : .secondary); VStack(alignment: .leading) { Text(file.name); if !file.isDirectory { Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)).font(.caption).foregroundStyle(.secondary) } } } }
+    private func joined(_ name: String) -> String { path.isEmpty ? name : "\(path)/\(name)" }
+    private func load() async { loading = true; do { files = try await store.api.studioFiles(path: path, profile: store.selectedProfile) } catch { store.errorMessage = error.localizedDescription }; loading = false }
+    private func mkdir() async { do { try await store.api.mkdirStudioFile(joined(folderName), profile: store.selectedProfile); folderName = ""; await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func delete(_ file: StudioFileItem) async { do { try await store.api.deleteStudioFile(file.path, recursive: file.isDirectory, profile: store.selectedProfile); await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func rename() async { guard let file = actionFile else { return }; do { try await store.api.renameStudioFile(file.path, to: actionName, profile: store.selectedProfile); actionFile = nil; await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func copy() async { guard let file = actionFile else { return }; do { try await store.api.copyStudioFile(file.path, to: actionName, profile: store.selectedProfile); actionFile = nil; await load() } catch { store.errorMessage = error.localizedDescription } }
+    private func upload(_ urls: [URL]) async { for url in urls { let scoped = url.startAccessingSecurityScopedResource(); defer { if scoped { url.stopAccessingSecurityScopedResource() } }; if let data = try? Data(contentsOf: url) { try? await store.api.uploadStudioFile(data: data, name: url.lastPathComponent, mime: "application/octet-stream", path: path, profile: store.selectedProfile) } }; await load() }
+}
+
+private struct StudioFileEditor: View { @EnvironmentObject var store: AppStore; let file: StudioFileItem; @State var content = ""; @State var loading = true
+    var body: some View { TextEditor(text: $content).font(.body.monospaced()).padding(6).navigationTitle(file.name).navigationBarTitleDisplayMode(.inline).overlay { if loading { ProgressView() } }.task { do { content = try await store.api.readStudioFile(file.path, profile: store.selectedProfile) } catch { store.errorMessage = error.localizedDescription }; loading = false }.toolbar { ToolbarItemGroup(placement: .topBarTrailing) { if let url = store.api.studioFileURL(file.path, profile: store.selectedProfile) { ShareLink(item: url) { Image(systemName: "square.and.arrow.up") } }; Button("Save") { Task { do { try await store.api.writeStudioFile(file.path, content: content, profile: store.selectedProfile); store.notify(String(localized: "File saved")) } catch { store.errorMessage = error.localizedDescription } } } } } }
+}
+
+struct StudioLogsView: View { @EnvironmentObject var store: AppStore; @State var files: [StudioLogFile] = []
+    var body: some View { List(files) { file in NavigationLink { StudioLogDetail(file: file) } label: { VStack(alignment: .leading) { Text(file.name).font(.headline); HStack { Text(file.size); Text("·"); Text(file.modified) }.font(.caption).foregroundStyle(.secondary) } } }.navigationTitle("Logs").task { files = (try? await store.api.logFiles()) ?? files }.refreshable { files = (try? await store.api.logFiles()) ?? files } }
+}
+private struct StudioLogDetail: View { @EnvironmentObject var store: AppStore; let file: StudioLogFile; @State var entries: [StudioLogEntry] = []; @State var search = ""; @State var level = ""
+    var body: some View { List { SearchBar(text: $search); Picker("Level", selection: $level) { Text("All").tag(""); ForEach(["error","warn","info","debug"], id: \.self) { Text($0.capitalized).tag($0) } }.pickerStyle(.segmented); ForEach(entries) { entry in VStack(alignment: .leading, spacing: 4) { HStack { StatusPill(text: entry.level, color: entry.level == "error" ? .red : (entry.level == "warn" ? .orange : .blue)); Text(entry.timestamp).font(.caption2).foregroundStyle(.secondary) }; Text(entry.message.nilIfEmpty ?? entry.raw).font(.caption.monospaced()).textSelection(.enabled) } } }.navigationTitle(file.name).task(id: "\(search)|\(level)") { try? await Task.sleep(for: .milliseconds(250)); entries = (try? await store.api.logEntries(file.name, text: search, level: level)) ?? entries } }
+}
+
+struct StudioConnectionsView: View {
+    @EnvironmentObject var store: AppStore
+    @State var relay: AppRelayInfo?; @State var connections: [AppConnectionItem] = []; @State var devices: [StudioDevice] = []; @State var authorization = ""; @State var loading = true
+    var body: some View {
+        List {
+            Section("App Relay") {
+                LabeledContent("Status") { StatusPill(text: relay?.connected == true ? String(localized: "Connected") : String(localized: "Disconnected"), color: relay?.connected == true ? .green : .gray) }
+                Picker("Route", selection: Binding(get: { relay?.route ?? "official" }, set: { route in Task { relay = try? await store.api.appRelay("route", method: "PUT", body: ["route": route]) } })) { Text("Official").tag("official"); Text("Cloudflare").tag("cloudflare") }
+                if let code = relay?.pairingCode.nilIfEmpty { LabeledContent("Pairing code", value: code).textSelection(.enabled) }
+                Button(relay?.connected == true ? "Disconnect relay" : "Connect relay") { Task { relay = try? await store.api.appRelay(relay?.connected == true ? "disconnect" : "connect", method: "POST") } }
+                Button("Refresh pairing code") { Task { relay = try? await store.api.appRelay("pairing-code", method: "POST") } }
+            }
+            Section("App connections") {
+                Button("Create LAN pairing code") { Task { let value = try? await store.api.appAuthorization(cloud: false); authorization = value?.string("authorization_code", "qr_payload") ?? "" } }
+                Button("Create cloud matching code") { Task { let value = try? await store.api.appAuthorization(cloud: true); authorization = value?.string("matching_code", "qr_payload") ?? "" } }
+                if !authorization.isEmpty { Text(authorization).font(.title3.monospaced()).textSelection(.enabled) }
+                ForEach(connections) { item in HStack { VStack(alignment: .leading) { Text(item.name); Text("\(item.model) · \(item.type)").font(.caption).foregroundStyle(.secondary) }; Spacer(); StatusPill(text: item.online ? String(localized: "Online") : String(localized: "Offline"), color: item.online ? .green : .gray) }.swipeActions { Button(role: .destructive) { Task { try? await store.api.deleteAppConnection(item.id); await load() } } label: { Label("Delete", systemImage: "trash") } } }
+            }
+            Section("Studio devices") {
+                Button("Scan devices") { Task { devices = (try? await store.api.devices(scan: true)) ?? devices } }
+                ForEach(devices) { device in VStack(alignment: .leading, spacing: 6) { HStack { Text(device.name).font(.headline); Spacer(); StatusPill(text: device.online ? String(localized: "Online") : String(localized: "Offline"), color: device.online ? .green : .gray) }; Text(device.url).font(.caption.monospaced()).foregroundStyle(.secondary); HStack { if device.inbound == "pending" { Button("Approve") { Task { try? await store.api.deviceAction(device.id, action: "approve"); await load() } }; Button("Reject") { Task { try? await store.api.deviceAction(device.id, action: "reject"); await load() } } }; if device.inbound == "approved" || device.outbound == "approved" { Button("Connect") { Task { try? await store.api.deviceAction(device.id, action: "connect") } } } } } }
+            }
+        }.navigationTitle("Connections").overlay { if loading { ProgressView() } }.task { await load() }.refreshable { await load() }
+    }
+    private func load() async { loading = true; async let relayRequest = store.api.appRelay(); async let connectionsRequest = store.api.appConnections(); async let devicesRequest = store.api.devices(); relay = try? await relayRequest; connections = (try? await connectionsRequest) ?? connections; devices = (try? await devicesRequest) ?? devices; loading = false }
 }

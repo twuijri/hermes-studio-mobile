@@ -31,6 +31,12 @@ struct InsightsView: View {
                         }
                     }
                 }
+                if !usage.agents.isEmpty {
+                    Section("By agent") { ForEach(usage.agents) { agent in LabeledContent { Text(compact(agent.totalTokens)).fontWeight(.semibold) } label: { VStack(alignment: .leading) { Text(AgentIdentity.displayName(for: agent.name)); Text("\(agent.sessions) sessions").font(.caption).foregroundStyle(.secondary) } } } }
+                }
+                if !usage.daily.isEmpty {
+                    Section("Daily activity") { ForEach(usage.daily.suffix(14)) { day in LabeledContent(day.name) { VStack(alignment: .trailing) { Text(compact(day.totalTokens)).fontWeight(.semibold); Text("\(day.sessions) sessions").font(.caption2).foregroundStyle(.secondary) } } } }
+                }
             }
             if let runtime {
                 Section("Studio runtime") {

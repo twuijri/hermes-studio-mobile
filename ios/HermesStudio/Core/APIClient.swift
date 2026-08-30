@@ -227,7 +227,10 @@ final class APIClient: @unchecked Sendable {
     }
 
     func usageStats(days: Int) async throws -> UsageStats {
-        let root = try await object("/api/hermes/usage/stats?days=\(min(365, max(1, days)))")
+        let safeDays = min(365, max(1, days))
+        let root: JSON
+        do { root = try await object("/api/studio/usage/stats?days=\(safeDays)") }
+        catch { root = try await object("/api/hermes/usage/stats?days=\(safeDays)") }
         let models = root.objects("model_usage").enumerated().map { index, item in
             let name = item.string("model", "name").nilIfEmpty ?? "Unknown"
             return UsageBreakdown(
@@ -236,12 +239,32 @@ final class APIClient: @unchecked Sendable {
                 sessions: item.int("sessions"), cost: item.double("cost")
             )
         }
+        func breakdown(_ key: String, nameKeys: [String]) -> [UsageBreakdown] { root.objects(key).enumerated().map { index, item in let name = nameKeys.lazy.map { item.string($0) }.first(where: { !$0.isEmpty }) ?? "Unknown"; return UsageBreakdown(id: "\(key)-\(name)-\(index)", name: name, inputTokens: item.int("input_tokens"), outputTokens: item.int("output_tokens"), sessions: item.int("sessions"), cost: item["cost"] == nil ? item.double("estimated_cost_usd") : item.double("cost")) } }
         return UsageStats(
             inputTokens: root.int("total_input_tokens"), outputTokens: root.int("total_output_tokens"),
             cacheTokens: root.int("total_cache_read_tokens") + root.int("total_cache_write_tokens"),
-            sessions: root.int("total_sessions"), cost: root.double("total_cost"), models: models
+            sessions: root.int("total_sessions"), cost: root.double("total_cost"), models: models,
+            agents: breakdown("agent_usage", nameKeys: ["agent", "name", "family"]), daily: breakdown("daily_usage", nameKeys: ["date", "day"])
         )
     }
+
+    func studioFiles(path: String, profile: String) async throws -> [StudioFileItem] { try await array("/api/studio/files/list?path=\(path.urlEncoded)&profile=\(profile.urlEncoded)", keys: ["entries"]).map(StudioFileItem.init) }
+    func readStudioFile(_ path: String, profile: String) async throws -> String { try await object("/api/studio/files/read?path=\(path.urlEncoded)&profile=\(profile.urlEncoded)").string("content") }
+    func writeStudioFile(_ path: String, content: String, profile: String) async throws { _ = try await object("/api/studio/files/write", method: "PUT", body: ["path": path, "content": content, "profile": profile]) }
+    func mkdirStudioFile(_ path: String, profile: String) async throws { _ = try await object("/api/studio/files/mkdir", method: "POST", body: ["path": path, "profile": profile]) }
+    func renameStudioFile(_ path: String, to newPath: String, profile: String) async throws { _ = try await object("/api/studio/files/rename", method: "POST", body: ["oldPath": path, "newPath": newPath, "profile": profile]) }
+    func copyStudioFile(_ path: String, to newPath: String, profile: String) async throws { _ = try await object("/api/studio/files/copy", method: "POST", body: ["srcPath": path, "destPath": newPath, "profile": profile]) }
+    func deleteStudioFile(_ path: String, recursive: Bool, profile: String) async throws { _ = try await object("/api/studio/files/delete", method: "DELETE", body: ["path": path, "recursive": recursive, "profile": profile]) }
+    func uploadStudioFile(data: Data, name: String, mime: String, path: String, profile: String) async throws { _ = try await multipart("/api/studio/files/upload?path=\(path.urlEncoded)&profile=\(profile.urlEncoded)", data: data, name: name, mime: mime, field: "file", profile: profile) }
+    func studioFileURL(_ path: String, profile: String) -> URL? { try? url("/api/studio/files/download?path=\(path.urlEncoded)&profile=\(profile.urlEncoded)&token=\(token.urlEncoded)") }
+    func logFiles() async throws -> [StudioLogFile] { try await array("/api/studio/logs", keys: ["files"]).map(StudioLogFile.init) }
+    func logEntries(_ name: String, text: String = "", level: String = "") async throws -> [StudioLogEntry] { var path = "/api/studio/logs/\(name.urlEncoded)?lines=1000"; if !text.isEmpty { path += "&text=\(text.urlEncoded)" }; if !level.isEmpty { path += "&level=\(level.urlEncoded)" }; return try await array(path, keys: ["entries"]).map(StudioLogEntry.init) }
+    func appRelay(_ action: String = "status", method: String = "GET", body: JSON? = nil) async throws -> AppRelayInfo { AppRelayInfo(try await object("/api/app-relay/\(action)", method: method, body: body).object("relay")) }
+    func appConnections() async throws -> [AppConnectionItem] { try await array("/api/app-connections", keys: ["connections"]).map(AppConnectionItem.init) }
+    func deleteAppConnection(_ id: Int) async throws { _ = try await object("/api/app-connections/\(id)", method: "DELETE") }
+    func appAuthorization(cloud: Bool, refresh: Bool = false, route: String = "official") async throws -> JSON { try await object("/api/app-connections/authorization-codes/\(cloud ? "cloud" : "lan")", method: "POST", body: cloud ? ["refresh": refresh, "route": route] : nil) }
+    func devices(scan: Bool = false) async throws -> [StudioDevice] { try await object("/api/devices\(scan ? "/scan" : "")", method: scan ? "POST" : "GET").objects("devices").map(StudioDevice.init) }
+    func deviceAction(_ id: String, action: String) async throws { _ = try await object("/api/devices/\(id.urlEncoded)/\(action)", method: "POST") }
 
     func runtimePerformance() async throws -> RuntimePerformance {
         let root = try await object("/api/hermes/performance/runtime")

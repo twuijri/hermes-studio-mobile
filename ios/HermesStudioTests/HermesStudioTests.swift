@@ -139,6 +139,22 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(status.gatewayURL, "http://127.0.0.1:3000")
     }
 
+    func testStudioFileAndConnectionPayloads() {
+        let file = StudioFileItem(["name": "notes.md", "path": "docs/notes.md", "isDir": false, "size": 42])
+        XCTAssertEqual(file.path, "docs/notes.md")
+        XCTAssertFalse(file.isDirectory)
+        let relay = AppRelayInfo(["connected": true, "machineId": "machine", "pairingCode": "123456", "route": "official"])
+        XCTAssertTrue(relay.connected)
+        XCTAssertEqual(relay.pairingCode, "123456")
+    }
+
+    func testStudioDeviceUsesCanonicalDiscoveryFields() {
+        let device = StudioDevice(["id": "d1", "computer_name": "Office Mac", "online": true, "inbound_status": "pending", "outbound_status": "none"])
+        XCTAssertEqual(device.name, "Office Mac")
+        XCTAssertEqual(device.inbound, "pending")
+        XCTAssertTrue(device.online)
+    }
+
     func testMarkdownParsesArabicHeadingsListsAndInlineBold() throws {
         let source = "### البريد غير المقروء\n- **635** عاجلة وتتطلب إجراء.\n  - طلبات معلومات.\n\n1. **تنظيف البريد**"
         let blocks = ChatMarkdownParser.parse(source)
