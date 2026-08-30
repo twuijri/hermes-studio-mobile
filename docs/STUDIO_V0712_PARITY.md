@@ -1,6 +1,6 @@
 # Hermes Studio v0.7.12 Mobile Parity
 
-This document is the acceptance checklist for matching Hermes Studio v0.7.12 on Android and iOS. Statuses were independently re-audited against the implementation at `2d3396f`, not inferred from commit messages.
+This document is the acceptance checklist for matching Hermes Studio v0.7.12 on Android and iOS. Statuses were independently re-audited against the implementation at `9353076`, not inferred from commit messages.
 
 Status legend: `Complete`, `Partial`, `Broken`, `Missing`, `Desktop-only/remote surface`.
 
@@ -12,11 +12,11 @@ Status legend: `Complete`, `Partial`, `Broken`, `Missing`, `Desktop-only/remote 
 | Coding-agent launch | Select scoped/global mode, provider protocol (`chat_completions`, `codex_responses`, `anthropic_messages`), provider, model, profile, workspace, and category | Partial | Partial | `/api/coding-agents/:id/runs`; `ChatPanel.vue` |
 | Socket run payload | Send `source`, `agent`, `coding_agent_id`, `coding_agent_mode`, API mode, workspace, category, push state, and queue ID | Partial | Partial | `packages/server/src/modules/studio/sockets/chat-run.ts` |
 | Run stream | Render message/reasoning/tool deltas, failures, usage, terminal state, and workspace change cards for all runtimes | Partial | Partial | `/chat-run`; `MessageItem.vue`; `ToolRunCard.vue`; `ToolChangeCard.vue` |
-| Resume | Use `app.resume` with cached message ID; restore messages, run state, tools, background tasks, queue, pending interactions, workspace changes, and push state | Partial | Partial | `chat-run.ts`; `resume-payload.ts` |
+| Resume | Use `app.resume` with the server page hash; restore messages, run state, tools, background tasks, queue, pending interactions, workspace changes, and push state | Broken | Partial | `chat-run.ts`; `resume-payload.ts` |
 | Approvals | Render approval prompt and supplied choices inline and emit `approval.respond`; restore it after reconnect | Partial | Partial | `approval.requested`, `approval.respond`, `approval.resolved`; `PendingInteractionCountdown.vue` |
-| Clarifications | Render question/options or text input inline and emit `clarify.respond`; restore it after reconnect | Partial | Broken | `clarify.requested`, `clarify.respond`, `clarify.resolved` |
-| Queue | Show queued messages, queue length, insertion state; support insert-next and cancel | Missing | Missing | `run.queued`, `insert_queued_run`, `cancel_queued_run`; `MessageQueueFloatPanel.vue` |
-| Subagents | Show background/delegated agents, runtime/status/output, and resumed state | Missing | Missing | `subagent.*`; `SubagentStreamPanel.vue`; `ConversationMonitorPane.vue` |
+| Clarifications | Render question/options or text input inline and emit `clarify.respond`; restore it after reconnect | Partial | Partial | `clarify.requested`, `clarify.respond`, `clarify.resolved` |
+| Queue | Show queued messages, queue length, insertion state; support insert-next and cancel | Partial | Partial | `run.queued`, `insert_queued_run`, `cancel_queued_run`; `MessageQueueFloatPanel.vue` |
+| Subagents | Show background/delegated agents, runtime/status/output, and resumed state | Partial | Partial | `subagent.*`; `SubagentStreamPanel.vue`; `ConversationMonitorPane.vue` |
 | Canonical APIs | Prefer v0.7.12 `/api/studio/**`; use legacy `/api/hermes/**` aliases only as compatibility fallback | Partial | Partial | `packages/server/src/modules/studio/middleware/legacy-app-api.ts` |
 
 ## P1 — Primary Studio organization
@@ -105,7 +105,43 @@ Status legend: `Complete`, `Partial`, `Broken`, `Missing`, `Desktop-only/remote 
 
 The phone should not install or directly execute Hermes, Claude Code, Codex, or Pi; host desktop terminals; run an Electron browser; manage local OS process trees; or render the desktop pet. It should expose authenticated remote status and controls for those capabilities whenever v0.7.12 provides an API/socket contract. Workflow canvas and rich office previews should receive phone-friendly list/detail fallbacks, while tablets may use the full visual editor.
 
-## Independent audit findings at 2d3396f
+## Independent re-audit findings at 9353076
+
+### Build gate
+
+- iOS CI run `33340739295` completed successfully for `9353076`.
+- Android CI run `33340739274` is still in progress. Android must not be declared build-clean until this run completes successfully.
+
+### Remaining P0 protocol/runtime defects
+
+1. **Android does not implement the `app.resume` cache contract correctly.** It sends the last conversation message UUID as `id`. In v0.7.12, `resume-payload.ts` defines this value as the server-generated SHA-256 page snapshot hash returned by `app.resumed.id`. Android never stores that hash, so cache matching cannot work and the server must return a full page.
+2. **Android cannot restore pending approval or clarification prompts.** The v0.7.12 resume payload stores replay entries as `{ event, data }`. `ChatSocket.restoreSnapshot` identifies the outer `event` but passes the outer envelope to `parseRequiredAction`; IDs, prompt, options, timeout, and response data are nested in `data`.
+3. **Android closes the live socket too early.** Every `run.completed` and `run.failed` closes immediately, without honoring `queue_remaining` and `background_pending`. A queued follow-up or background subagent therefore loses the stream after the foreground run ends. iOS now keeps the connection open for these counters on terminal events.
+4. **Android runtime launch remains behaviorally incomplete.** `AgentRuntimeSelection` contains only ID/family/name/global-agent. `ChatSocket` consequently forces all ordinary coding agents to `mode=global` and cannot send the selected scoped/global mode, `api_mode`, `base_url`, `api_key`, workspace, category, or push state. This can launch a different runtime/configuration than the user selected.
+5. **Android queue and subagent support has no conversation surface.** Socket events, state, insert and cancel methods exist, but no Compose screen reads `queuedRuns` or background-agent state. Users cannot see, insert, cancel, or inspect this work.
+6. **Android resume restoration remains incomplete beyond the envelope bug.** It restores usage, queue and background tasks only. It does not apply the returned message page, server cache ID, model/provider/API mode/reasoning/push/workspace/category metadata, or `workspaceRunChanges`.
+7. **iOS resume is substantially repaired but still partial.** It stores the server resume ID, unwraps event envelopes, restores queue/background actions, and uses the correct clarification payload. It does not restore/render all session metadata or `workspaceRunChanges`; its non-working resume branch can also finish without considering resumed queue/background counters.
+8. **Approvals and clarifications lack the complete interaction contract on both clients.** Inline approve/reject and clarify response work, including corrected iOS keys and resolved events, but timeout/countdown, `initial_response`, `response_mode`, and a global pending-interaction tray remain absent.
+
+### Concrete remotely implementable gaps after P0
+
+- Implement the dedicated `/global-agent` socket and expose its session/runtime/voice/control state; the current shortcut to normal chat is not equivalent.
+- Add workspace-run change cards and authenticated diff/detail viewing in conversations.
+- Complete session workspace, category, push, reasoning and coding-agent protocol selection so the persisted session and socket launch use the same values.
+- Add queue/subagent UI on Android and keep both clients attached while queued/background work remains.
+- Add protocol fixture tests for run payloads, `app.resumed` envelopes, terminal counters, approvals/clarifications, queue insertion/cancellation, and every `subagent.*` event on both platforms.
+- Complete the mobile remote-control surfaces already backed by v0.7.12 APIs: workflow live socket/schedules/rerun, group handoffs/files/admin/linking, provider/model orchestration, Kanban socket/actions, App Relay/device actions, and Studio update controls.
+
+### Corrected P0 progress
+
+- iOS clarification keys now match v0.7.12: `clarify_id` and `response`.
+- Both clients listen for resolved interaction events, queue events, and canonical subagent event names.
+- iOS implements queue controls in the conversation and renders subagent activity as live tool rows.
+- Android implements the queue socket commands and retains queue/background state, but the missing UI and terminal-close behavior prevent functional parity.
+
+## Historical audit findings at 2d3396f
+
+The following section records the earlier baseline and is retained for traceability. Claims in it about current build status or P0 implementation are superseded by the `9353076` re-audit above.
 
 ### P0 defects
 
