@@ -758,6 +758,43 @@ class HermesApi(
     fun testEkkoMcpServer(profile: String, name: String) { call("/api/ekko/mcp/servers/${enc(name)}/test", "POST", JSONObject(), profile) }
     fun deleteEkkoMcpServer(profile: String, name: String) { call("/api/ekko/mcp/servers/${enc(name)}", "DELETE", profile = profile) }
 
+    fun studioFiles(profile: String, path: String): List<StudioFile> {
+        val array = call("/api/studio/files/list?path=${enc(path)}", profile = profile).optJSONArray("entries") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item -> StudioFile(item.optString("name"), item.optString("path"), item.optBoolean("isDir"), item.optLong("size")) } }.filter { it.name.isNotBlank() }
+    }
+    fun readStudioFile(profile: String, path: String): String = call("/api/studio/files/read?path=${enc(path)}", profile = profile).optString("content")
+    fun writeStudioFile(profile: String, path: String, content: String) { call("/api/studio/files/write", "PUT", JSONObject().put("path", path).put("content", content), profile) }
+    fun mkdirStudioFile(profile: String, path: String) { call("/api/studio/files/mkdir", "POST", JSONObject().put("path", path), profile) }
+    fun renameStudioFile(profile: String, old: String, new: String) { call("/api/studio/files/rename", "POST", JSONObject().put("oldPath", old).put("newPath", new), profile) }
+    fun copyStudioFile(profile: String, source: String, destination: String) { call("/api/studio/files/copy", "POST", JSONObject().put("srcPath", source).put("destPath", destination), profile) }
+    fun deleteStudioFile(profile: String, file: StudioFile) { call("/api/studio/files/delete", "DELETE", JSONObject().put("path", file.path).put("recursive", file.directory), profile) }
+    fun studioFilePreviewUrl(profile: String, path: String): String = url("/api/studio/files/preview?path=${enc(path)}&profile=${enc(profile)}&token=${enc(token)}")
+
+    fun studioLogs(): List<StudioLogFile> {
+        val array = call("/api/studio/logs").optJSONArray("files") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { StudioLogFile(it.optString("name"), it.optString("size"), it.optString("modified")) } }.filter { it.name.isNotBlank() }
+    }
+    fun studioLog(name: String, profile: String): List<StudioLogEntry> {
+        val array = call("/api/studio/logs/${enc(name)}?lines=300&profile=${enc(profile)}").optJSONArray("entries") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { StudioLogEntry(it.optString("timestamp"), it.optString("level"), it.optString("logger"), it.optString("message")) } }
+    }
+
+    fun appRelayStatus(): AppRelayStatus = parseRelay(call("/api/app-relay/status").optJSONObject("relay") ?: JSONObject())
+    fun connectAppRelay(): AppRelayStatus = parseRelay(call("/api/app-relay/connect", "POST", JSONObject()).optJSONObject("relay") ?: JSONObject())
+    fun refreshAppRelayCode(): AppRelayStatus = parseRelay(call("/api/app-relay/pairing-code", "POST", JSONObject()).optJSONObject("relay") ?: JSONObject())
+    fun disconnectAppRelay(): AppRelayStatus = parseRelay(call("/api/app-relay/disconnect", "POST", JSONObject()).optJSONObject("relay") ?: JSONObject())
+    private fun parseRelay(item: JSONObject) = AppRelayStatus(item.optBoolean("connected"), item.optString("machineId"), item.optString("pairingCode"), item.optLong("pairingExpiresAt"), item.optString("route"), item.optString("relayUrl"))
+
+    fun studioDevices(): List<StudioDevice> {
+        val root = call("/api/devices")
+        val array = root.optJSONArray("devices") ?: root.optJSONArray("relations") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item ->
+            val id = firstNonBlank(item, "id", "device_id") ?: return@let null
+            StudioDevice(id, firstNonBlank(item, "computer_name", "name") ?: id.take(8), firstNonBlank(item, "url", "ip") ?: "", item.optString("inbound_status"), item.optString("outbound_status"))
+        } }
+    }
+    fun deviceAction(id: String, action: String) { call("/api/devices/${enc(id)}/$action", "POST", JSONObject()) }
+
     /** POST /api/hermes/sessions/{id}/model */
     fun setSessionModel(sessionId: String, model: String, provider: String?) {
         val body = JSONObject().put("model", model)

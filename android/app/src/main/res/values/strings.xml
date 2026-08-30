@@ -780,4 +780,8 @@
     <string name="action_test">Test</string>
     <string name="action_add">Add</string>
     <string name="profile_runtime_status">Runtime: %1$s</string>
+    <string name="files_title">Studio Files</string><string name="files_hub_note">Browse and edit profile workspace files</string><string name="files_new_folder">New folder</string><string name="files_edit">Read or edit</string><string name="files_open_external">Open externally</string><string name="files_saved">File saved</string>
+    <string name="logs_title">Logs</string><string name="logs_hub_note">Studio, bridge and agent diagnostics</string>
+    <string name="connections_title">Connections</string><string name="connections_hub_note">App Relay and paired Studio devices</string><string name="app_relay_title">App Relay</string><string name="devices_title">Devices</string><string name="connected">Connected</string><string name="disconnected">Disconnected</string><string name="connect">Connect</string><string name="disconnect">Disconnect</string><string name="refresh_pairing">New pairing code</string>
+    <string name="insights_by_agent">By agent</string><string name="insights_daily">Daily usage</string>
 </resources>

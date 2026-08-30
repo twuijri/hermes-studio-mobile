@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 enum class Screen {
     Loading, Onboarding, Login, Chats, Groups, AgentHub, Conversation, Room, Profiles,
     Settings, MoreSettings, SettingsGroup, Channels, Channel, CronJobs, CronJob, CronHistory,
-    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes, Workflows, GlobalAgent, EkkoHub,
+    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes, Workflows, GlobalAgent, EkkoHub, Files, Logs, Connections,
 }
 
 /** Settings is a short list of these; each opens its own screen. */
@@ -190,6 +190,15 @@ data class UiState(
     val ekkoMcpServers: List<EkkoMcpServer> = emptyList(),
     val loadingEkko: Boolean = false,
     val profileRuntimeStatuses: Map<String, String> = emptyMap(),
+    val filesPath: String = "",
+    val studioFiles: List<StudioFile> = emptyList(),
+    val openFile: StudioFile? = null,
+    val openFileContent: String = "",
+    val studioLogs: List<StudioLogFile> = emptyList(),
+    val openLog: StudioLogFile? = null,
+    val logEntries: List<StudioLogEntry> = emptyList(),
+    val appRelay: AppRelayStatus? = null,
+    val studioDevices: List<StudioDevice> = emptyList(),
 )
 
 data class WeixinQrUi(
@@ -466,6 +475,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun restartProfile(profile: String) = launchWork(work = { api.restartProfileRuntime(profile) }, onSuccess = { refreshProfiles(); _state.update { it.copy(notice = str(R.string.profile_restarted)) } })
     fun refreshProviderModels(provider: String) = launchWork(work = { api.refreshProviderModels(currentProfile(), provider) }, onSuccess = { loadModelProviders(); _state.update { it.copy(notice = str(R.string.models_refreshed)) } })
     fun testProvider(provider: String) = launchWork(work = { api.testProvider(currentProfile(), provider) }, onSuccess = { result -> _state.update { it.copy(notice = result) } })
+
+    fun openFiles(path: String = "") = launchWork(work = { api.studioFiles(currentProfile(), path) }, onSuccess = { files -> _state.update { it.copy(screen = Screen.Files, filesPath = path, studioFiles = files, openFile = null, error = null) } })
+    fun openStudioFile(file: StudioFile) = launchWork(work = { api.readStudioFile(currentProfile(), file.path) }, onSuccess = { content -> _state.update { it.copy(openFile = file, openFileContent = content) } })
+    fun closeStudioFile() = _state.update { it.copy(openFile = null, openFileContent = "") }
+    fun saveStudioFile(content: String) { val file = _state.value.openFile ?: return; launchWork(work = { api.writeStudioFile(currentProfile(), file.path, content) }, onSuccess = { _state.update { it.copy(openFileContent = content, notice = str(R.string.files_saved)) } }) }
+    fun createStudioFolder(name: String) { val path = listOf(_state.value.filesPath, name).filter(String::isNotBlank).joinToString("/"); launchWork(work = { api.mkdirStudioFile(currentProfile(), path) }, onSuccess = { openFiles(_state.value.filesPath) }) }
+    fun renameStudioFile(file: StudioFile, name: String) { val target = file.path.substringBeforeLast('/', "").let { if (it.isBlank()) name else "$it/$name" }; launchWork(work = { api.renameStudioFile(currentProfile(), file.path, target) }, onSuccess = { openFiles(_state.value.filesPath) }) }
+    fun copyStudioFile(file: StudioFile, destination: String) = launchWork(work = { api.copyStudioFile(currentProfile(), file.path, destination) }, onSuccess = { openFiles(_state.value.filesPath) })
+    fun deleteStudioFile(file: StudioFile) = launchWork(work = { api.deleteStudioFile(currentProfile(), file) }, onSuccess = { openFiles(_state.value.filesPath) })
+    fun studioFileUrl(file: StudioFile): String = api.studioFilePreviewUrl(currentProfile(), file.path)
+
+    fun openLogs() = launchWork(work = { api.studioLogs() }, onSuccess = { logs -> _state.update { it.copy(screen = Screen.Logs, studioLogs = logs, openLog = null, error = null) } })
+    fun openLog(log: StudioLogFile) = launchWork(work = { api.studioLog(log.name, currentProfile()) }, onSuccess = { entries -> _state.update { it.copy(openLog = log, logEntries = entries) } })
+    fun closeLog() = _state.update { it.copy(openLog = null, logEntries = emptyList()) }
+
+    fun openConnections() = launchWork(work = { api.appRelayStatus() to api.studioDevices() }, onSuccess = { (relay, devices) -> _state.update { it.copy(screen = Screen.Connections, appRelay = relay, studioDevices = devices, error = null) } })
+    fun connectRelay() = launchWork(work = { api.connectAppRelay() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
+    fun refreshRelayCode() = launchWork(work = { api.refreshAppRelayCode() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
+    fun disconnectRelay() = launchWork(work = { api.disconnectAppRelay() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
+    fun deviceAction(device: StudioDevice, action: String) = launchWork(work = { api.deviceAction(device.id, action) }, onSuccess = { openConnections() })
 
     fun startGlobalAgentConversation() {
         startNewConversation(AgentRuntimeSelection("ekko-agent", "ekko", "Global Agent", globalAgent = true))
@@ -2857,7 +2886,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Screen.CronJob, Screen.CronHistory -> Screen.CronJobs
                 Screen.KanbanTask -> Screen.Kanban
                 Screen.Skill -> Screen.Skills
-                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub -> Screen.AgentHub
+                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub, Screen.Files, Screen.Logs, Screen.Connections -> Screen.AgentHub
                 Screen.Channels, Screen.SettingsGroup, Screen.CronJobs -> state.toolReturnScreen
                 Screen.Profiles -> state.profilesReturnScreen
                 Screen.MoreSettings -> Screen.Settings

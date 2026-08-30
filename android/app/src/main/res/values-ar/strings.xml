@@ -779,4 +779,8 @@
     <string name="action_test">اختبار</string>
     <string name="action_add">إضافة</string>
     <string name="profile_runtime_status">حالة المحرك: %1$s</string>
+    <string name="files_title">ملفات الاستديو</string><string name="files_hub_note">تصفح ملفات مساحة عمل البروفايل وتعديلها</string><string name="files_new_folder">مجلد جديد</string><string name="files_edit">قراءة أو تعديل</string><string name="files_open_external">فتح خارجيًا</string><string name="files_saved">تم حفظ الملف</string>
+    <string name="logs_title">السجلات</string><string name="logs_hub_note">تشخيصات الاستديو والجسر والوكلاء</string>
+    <string name="connections_title">الاتصالات</string><string name="connections_hub_note">ترحيل التطبيق وأجهزة الاستديو المرتبطة</string><string name="app_relay_title">ترحيل التطبيق</string><string name="devices_title">الأجهزة</string><string name="connected">متصل</string><string name="disconnected">غير متصل</string><string name="connect">اتصال</string><string name="disconnect">قطع الاتصال</string><string name="refresh_pairing">رمز اقتران جديد</string>
+    <string name="insights_by_agent">حسب الوكيل</string><string name="insights_daily">الاستهلاك اليومي</string>
 </resources>

@@ -51,6 +51,9 @@ class NavigationStructureTest {
             "openWorkflows()",
             "openGlobalAgent()",
             "openEkkoHub()",
+            "openFiles()",
+            "openLogs()",
+            "openConnections()",
         ).forEach { destination -> assertTrue("Agent hub lost $destination", hub.contains(destination)) }
         assertFalse("Pets must not appear in the Agent hub", hub.contains("openPets()"))
         val skills = File("src/main/java/us/i3u/hermesstudio/AgentToolScreens.kt").readText()

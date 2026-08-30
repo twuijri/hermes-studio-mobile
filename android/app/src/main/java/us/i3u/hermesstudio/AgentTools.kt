@@ -191,6 +191,11 @@ data class StudioWorkflowRun(
 
 data class EkkoMemory(val id: String, val title: String, val content: String, val status: String, val revision: Int, val tags: List<String>)
 data class EkkoMcpServer(val name: String, val enabled: Boolean, val transport: String, val config: String)
+data class StudioFile(val name: String, val path: String, val directory: Boolean, val size: Long)
+data class StudioLogFile(val name: String, val size: String, val modified: String)
+data class StudioLogEntry(val timestamp: String, val level: String, val logger: String, val message: String)
+data class AppRelayStatus(val connected: Boolean, val machineId: String, val pairingCode: String, val expiresAt: Long, val route: String, val relayUrl: String)
+data class StudioDevice(val id: String, val name: String, val address: String, val inbound: String, val outbound: String)
 
 data class PluginsUiState(
     val loading: Boolean = false,

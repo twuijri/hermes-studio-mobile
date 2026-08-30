@@ -265,7 +265,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Conversation, Screen.Room, Screen.Profiles, Screen.Settings,
         Screen.MoreSettings, Screen.SettingsGroup, Screen.Channels, Screen.Channel, Screen.CronJobs,
         Screen.CronJob, Screen.CronHistory, Screen.Kanban, Screen.KanbanTask, Screen.Skills,
-        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub,
+        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub, Screen.Files, Screen.Logs, Screen.Connections,
         -> BackHandler { viewModel.back() }
         Screen.Groups, Screen.AgentHub -> BackHandler { viewModel.showTab(Tab.Chats) }
         else -> Unit
@@ -303,6 +303,9 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Workflows -> WorkflowsScreen(state, viewModel)
         Screen.GlobalAgent -> GlobalAgentScreen(state, viewModel)
         Screen.EkkoHub -> EkkoHubScreen(state, viewModel)
+        Screen.Files -> FilesScreen(state, viewModel)
+        Screen.Logs -> LogsScreen(state, viewModel)
+        Screen.Connections -> ConnectionsScreen(state, viewModel)
         Screen.Login -> LoginScreen(state, viewModel)
         Screen.Chats -> ChatsScreen(state, viewModel)
         Screen.Groups -> GroupsScreen(state, viewModel)
@@ -2545,6 +2548,12 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
                         subtitle = stringResource(R.string.insights_subtitle),
                         onClick = { viewModel.openInsights() },
                     )
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Folder, Color(0xFFFFB547), stringResource(R.string.files_title), stringResource(R.string.files_hub_note), { viewModel.openFiles() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.History, Color(0xFF4D8DFF), stringResource(R.string.logs_title), stringResource(R.string.logs_hub_note), { viewModel.openLogs() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Dns, Color(0xFF2AAE88), stringResource(R.string.connections_title), stringResource(R.string.connections_hub_note), { viewModel.openConnections() })
                 }
             }
 
@@ -2961,6 +2970,18 @@ private fun InsightsScreen(state: UiState, viewModel: AppViewModel) {
                     item { StudioSectionTitle(stringResource(R.string.insights_by_model)) }
                     items(stats.models.take(8), key = { it.name }) { row ->
                         StudioGroupedCard { InsightMetric(row.name, compactNumber(row.totalTokens), row.sessions.toString()) }
+                    }
+                }
+                if (stats.agents.isNotEmpty()) {
+                    item { StudioSectionTitle(stringResource(R.string.insights_by_agent)) }
+                    items(stats.agents.take(8), key = { it.name }) { row ->
+                        StudioGroupedCard { InsightMetric(row.name, compactNumber(row.totalTokens), row.sessions.toString()) }
+                    }
+                }
+                if (stats.daily.isNotEmpty()) {
+                    item { StudioSectionTitle(stringResource(R.string.insights_daily)) }
+                    items(stats.daily.takeLast(14).reversed(), key = { it.date }) { row ->
+                        StudioGroupedCard { InsightMetric(row.date, compactNumber(row.totalTokens), "$${"%.3f".format(row.cost)}") }
                     }
                 }
             }

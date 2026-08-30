@@ -163,6 +163,32 @@ class HermesApiContractTest {
     }
 
     @Test
+    fun `Studio files logs and relay use canonical APIs`() {
+        enqueue("""{"entries":[{"name":"notes.md","path":"notes.md","isDir":false,"size":24}]}""")
+        assertEquals("notes.md", api.studioFiles("manager", "").single().name)
+        assertEquals("/api/studio/files/list?path=", server.takeRequest().path)
+
+        enqueue("""{"files":[{"name":"webui","size":"2KB","modified":"today"}]}""")
+        assertEquals("webui", api.studioLogs().single().name)
+        assertEquals("/api/studio/logs", server.takeRequest().path)
+
+        enqueue("""{"relay":{"connected":true,"machineId":"host","pairingCode":"123456","pairingExpiresAt":99,"route":"cloud"}}""")
+        assertTrue(api.appRelayStatus().connected)
+        assertEquals("/api/app-relay/status", server.takeRequest().path)
+    }
+
+    @Test
+    fun `file deletion carries explicit recursive scope`() {
+        enqueue("""{"ok":true}""")
+        api.deleteStudioFile("manager", StudioFile("tmp", "workspace/tmp", true, 0))
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        val body = JSONObject(request.body.readUtf8())
+        assertEquals("workspace/tmp", body.getString("path"))
+        assertTrue(body.getBoolean("recursive"))
+    }
+
+    @Test
     fun `conversation history keeps the numeric Studio message timestamp`() {
         enqueue(
             """
