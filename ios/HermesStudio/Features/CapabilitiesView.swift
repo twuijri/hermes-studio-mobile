@@ -135,6 +135,7 @@ struct ModelsView: View {
 
     var body: some View {
         List {
+            Section { NavigationLink { ProvidersView() } label: { AgentToolRow(icon: "network", color: .blue, title: "Providers", detail: "Status, connection tests and model refresh") } }
             Section {
                 SearchBar(text: $search)
                     .listRowInsets(EdgeInsets())
@@ -176,4 +177,36 @@ struct ModelsView: View {
         loading = false
     }
     private func select(_ model: ModelOption) async { do { try await store.api.setDefaultModel(profile: store.selectedProfile, model: model.id, provider: model.provider.nilIfEmpty); selected = model.id; store.notify(String(localized: "Default model updated")) } catch { store.errorMessage = error.localizedDescription } }
+}
+
+struct ProvidersView: View {
+    @EnvironmentObject private var store: AppStore
+    @State private var providers: [ProviderSummary] = []; @State private var working: String?
+    var body: some View { List { ForEach(providers) { provider in VStack(alignment: .leading, spacing: 9) { HStack { VStack(alignment: .leading) { Text(provider.label).font(.headline); Text(provider.id).font(.caption.monospaced()).foregroundStyle(.secondary) }; Spacer(); StatusPill(text: provider.credentialConfigured ? String(localized: "Configured") : String(localized: "Needs key"), color: provider.credentialConfigured ? .green : .orange) }; if !provider.baseURL.isEmpty { Text(provider.baseURL).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1) }; Text("\(provider.models.count) models").font(.caption).foregroundStyle(.secondary); HStack { Button("Test") { Task { await test(provider) } }.buttonStyle(.bordered); if provider.refreshable { Button("Refresh models") { Task { await refresh(provider) } }.buttonStyle(.bordered) }; if working == provider.id { ProgressView().controlSize(.small) } } }.padding(.vertical, 5) } }.navigationTitle("Providers").refreshable { await load() }.task { await load() }.toolbar { Button("Refresh all") { Task { try? await store.api.refreshProviderCache(); await load() } } } }
+    private func load() async { providers = (try? await store.api.providers(profile: store.selectedProfile)) ?? providers }
+    private func test(_ item: ProviderSummary) async { working = item.id; do { let result = try await store.api.testProvider(item.id); store.notify(result.bool("success") ? String(localized: "Connection successful") : result.string("error").nilIfEmpty ?? String(localized: "Connection failed")) } catch { store.errorMessage = error.localizedDescription }; working = nil }
+    private func refresh(_ item: ProviderSummary) async { working = item.id; do { let result = try await store.api.refreshProviderModels(item.id); if result.bool("requires_confirmation") { _ = try await store.api.refreshProviderModels(item.id, confirm: true) }; await load() } catch { store.errorMessage = error.localizedDescription }; working = nil }
+}
+
+struct EkkoSkillsView: View {
+    @EnvironmentObject private var store: AppStore
+    @State private var items: [EkkoSkillItem] = []; @State private var search = ""; @State private var selected: EkkoSkillItem?; @State private var importing = false
+    var body: some View { List { SearchBar(text: $search); ForEach(items) { item in Button { Task { selected = try? await store.api.ekkoSkill(item.name) } } label: { HStack { VStack(alignment: .leading) { Text(item.name).font(.headline).foregroundStyle(.primary); Text(item.description).font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); Toggle("", isOn: Binding(get: { item.enabled }, set: { value in Task { try? await store.api.setEkkoSkill(item.name, enabled: value); await load() } } )).labelsHidden() } } } }.navigationTitle("Ekko skills").task(id: search) { try? await Task.sleep(for: .milliseconds(250)); await load() }.sheet(item: $selected) { EkkoSkillDetailView(item: $0) { await load() } }.toolbar { Button { importing = true } label: { Image(systemName: "square.and.arrow.down") } }.fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in if case let .success(url) = result { Task { await importSkill(url) } } } }
+    private func load() async { items = (try? await store.api.ekkoSkills(query: search)) ?? items }
+    private func importSkill(_ url: URL) async { let scoped = url.startAccessingSecurityScopedResource(); defer { if scoped { url.stopAccessingSecurityScopedResource() } }; do { try await store.api.importEkkoSkill(data: Data(contentsOf: url), name: url.lastPathComponent); await load() } catch { store.errorMessage = error.localizedDescription } }
+}
+
+private struct EkkoSkillDetailView: View { @EnvironmentObject var store: AppStore; @Environment(\.dismiss) var dismiss; @State var item: EkkoSkillItem; @State var files: [JSON] = []; let saved: () async -> Void
+    var body: some View { NavigationStack { Form { Section("Skill") { LabeledContent("Category", value: item.category); LabeledContent("Source", value: item.source); TextEditor(text: $item.content).frame(minHeight: 240).font(.body.monospaced()) }; if !files.isEmpty { Section("Files") { ForEach(Array(files.enumerated()), id: \.offset) { _, file in Label(file.string("path", "name"), systemImage: file.bool("directory") ? "folder" : "doc") } } } }.navigationTitle(item.name).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { try? await store.api.saveEkkoSkill(item); await saved(); dismiss() } } } }.task { files = (try? await store.api.ekkoSkillFiles(item.name)) ?? [] } } }
+}
+
+struct EkkoMCPView: View {
+    @EnvironmentObject private var store: AppStore
+    @State private var servers: [EkkoMCPItem] = []; @State private var editing: EkkoMCPItem?; @State private var creating = false
+    var body: some View { List { ForEach(servers) { server in Button { editing = server } label: { HStack { VStack(alignment: .leading) { Text(server.name).font(.headline).foregroundStyle(.primary); Text(server.url.nilIfEmpty ?? ([server.command] + server.arguments).joined(separator: " ")).font(.caption.monospaced()).foregroundStyle(.secondary) }; Spacer(); StatusPill(text: server.enabled ? String(localized: "On") : String(localized: "Off"), color: server.enabled ? .green : .gray) } }.swipeActions { Button(role: .destructive) { Task { try? await store.api.deleteEkkoMCP(server.name); await load() } } label: { Label("Delete", systemImage: "trash") } } } }.navigationTitle("Ekko MCP").task { await load() }.refreshable { await load() }.toolbar { Button { creating = true } label: { Image(systemName: "plus") } }.sheet(isPresented: $creating) { EkkoMCPEditor(server: nil) { await load() } }.sheet(item: $editing) { EkkoMCPEditor(server: $0) { await load() } } }
+    private func load() async { servers = (try? await store.api.ekkoMCPServers()) ?? servers }
+}
+
+private struct EkkoMCPEditor: View { @EnvironmentObject var store: AppStore; @Environment(\.dismiss) var dismiss; let server: EkkoMCPItem?; let saved: () async -> Void; @State var name = ""; @State var command = ""; @State var args = ""; @State var url = ""; @State var enabled = true; @State var testResult = ""
+    var body: some View { NavigationStack { Form { TextField("Name", text: $name).disabled(server != nil); TextField("Remote URL", text: $url).keyboardType(.URL); if url.isEmpty { TextField("Command", text: $command); TextField("Arguments", text: $args, axis: .vertical) }; Toggle("Enabled", isOn: $enabled); if server != nil { Button("Test connection") { Task { let tools = try? await store.api.testEkkoMCP(name); testResult = "\(tools?.count ?? 0) tools" } }; if !testResult.isEmpty { Text(testResult) } } }.navigationTitle(server == nil ? "Add Ekko MCP" : "Edit Ekko MCP").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { let item = EkkoMCPItem(["name": name, "config": ["enabled": enabled, "command": command, "args": args.split(separator: " ").map(String.init), "url": url]]); try? await store.api.saveEkkoMCP(item, existing: server != nil); await saved(); dismiss() } }.disabled(name.isEmpty) } }.onAppear { if let server { name = server.name; command = server.command; args = server.arguments.joined(separator: " "); url = server.url; enabled = server.enabled } } } }
 }

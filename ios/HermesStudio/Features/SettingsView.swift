@@ -96,12 +96,66 @@ private struct CredentialChangeView: View {
 
 struct ProfilesView: View {
     @EnvironmentObject private var store: AppStore
-    @State private var creating = false; @State private var newName = ""; @State private var renaming: Profile?; @State private var renameText = ""
+    @State private var creating = false; @State private var newName = ""; @State private var renaming: Profile?; @State private var renameText = ""; @State private var runtimes: [ProfileRuntime] = []
     var body: some View {
-        List { ForEach(store.profiles) { profile in Button { store.chooseProfile(profile.name) } label: { HStack(spacing: 13) { ProfileAvatar(name: profile.name, avatar: profile.avatar, size: 45); VStack(alignment: .leading, spacing: 3) { Text(profile.name).font(.headline).foregroundStyle(.primary); Text(profile.model ?? "Default model").font(.caption).foregroundStyle(.secondary) }; Spacer(); if profile.name == store.selectedProfile { Image(systemName: "checkmark.circle.fill").foregroundStyle(HermesTheme.purple) } }.padding(.vertical, 3) }.swipeActions(edge: .leading) { Button { renameText = profile.name; renaming = profile } label: { Label("Rename", systemImage: "pencil") }.tint(.blue); Button { Task { do { try await store.api.restartGateway(profile: profile.name); store.notify(String(localized: "Gateway restarted")) } catch { store.errorMessage = error.localizedDescription } } } label: { Label("Restart", systemImage: "arrow.clockwise") }.tint(.orange) }.swipeActions(edge: .trailing) { if store.profiles.count > 1 { Button(role: .destructive) { Task { try? await store.api.deleteProfile(profile.name); await store.refreshProfiles() } } label: { Label("Delete", systemImage: "trash") } } } } }.listStyle(.insetGrouped).navigationTitle("Profiles").toolbar { Button { creating = true } label: { Image(systemName: "plus") } }.refreshable { await store.refreshProfiles() }
+        List { ForEach(store.profiles) { profile in NavigationLink { ProfileDetailView(profile: profile) } label: { HStack(spacing: 13) { ProfileAvatar(name: profile.name, avatar: profile.avatar, size: 45); VStack(alignment: .leading, spacing: 3) { Text(profile.name).font(.headline).foregroundStyle(.primary); Text(profile.model ?? "Default model").font(.caption).foregroundStyle(.secondary); if let runtime = runtimes.first(where: { $0.id == profile.name }) { Text(runtime.bridgeRunning ? "Runtime running" : "Runtime stopped").font(.caption2).foregroundStyle(runtime.bridgeRunning ? .green : .secondary) } }; Spacer(); if profile.name == store.selectedProfile { Image(systemName: "checkmark.circle.fill").foregroundStyle(HermesTheme.purple) } }.padding(.vertical, 3) }.swipeActions(edge: .leading) { Button { renameText = profile.name; renaming = profile } label: { Label("Rename", systemImage: "pencil") }.tint(.blue); Button { Task { try? await store.api.restartProfileRuntime(profile.name); await loadRuntimes() } } label: { Label("Restart runtime", systemImage: "arrow.clockwise") }.tint(.orange) }.swipeActions(edge: .trailing) { if store.profiles.count > 1 { Button(role: .destructive) { Task { try? await store.api.deleteProfile(profile.name); await store.refreshProfiles() } } label: { Label("Delete", systemImage: "trash") } } } } }.listStyle(.insetGrouped).navigationTitle("Profiles").toolbar { Button { creating = true } label: { Image(systemName: "plus") } }.refreshable { await store.refreshProfiles(); await loadRuntimes() }.task { await loadRuntimes() }
             .alert("New profile", isPresented: $creating) { TextField("Name", text: $newName); Button("Create") { Task { do { try await store.api.createProfile(newName); await store.refreshProfiles(); newName = "" } catch { store.errorMessage = error.localizedDescription } } }; Button("Cancel", role: .cancel) {} }
             .alert("Rename profile", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) { TextField("Name", text: $renameText); Button("Save") { guard let renaming else { return }; Task { do { try await store.api.renameProfile(renaming.name, to: renameText); await store.refreshProfiles() } catch { store.errorMessage = error.localizedDescription } } }; Button("Cancel", role: .cancel) {} }
     }
+    private func loadRuntimes() async { runtimes = (try? await store.api.profileRuntimes()) ?? runtimes }
+}
+
+private struct ProfileDetailView: View {
+    @EnvironmentObject private var store: AppStore
+    let profile: Profile
+    @State private var runtime: ProfileRuntime?
+    @State private var photo: PhotosPickerItem?
+    @State private var importing = false
+    @State private var exportedURL: URL?
+    var body: some View { List {
+        Section { HStack(spacing: 14) { ProfileAvatar(name: profile.name, avatar: profile.avatar, size: 64); VStack(alignment: .leading) { Text(profile.name).font(.title3.bold()); Text(profile.model ?? "Default model").foregroundStyle(.secondary) } } }
+        Section("Runtime status") { LabeledContent("Bridge") { StatusPill(text: runtime?.bridgeRunning == true ? String(localized: "Running") : String(localized: "Stopped"), color: runtime?.bridgeRunning == true ? .green : .gray) }; LabeledContent("Gateway") { StatusPill(text: runtime?.gatewayRunning == true ? String(localized: "Running") : String(localized: "Stopped"), color: runtime?.gatewayRunning == true ? .green : .gray) }; if let url = runtime?.gatewayURL.nilIfEmpty { Text(url).font(.caption.monospaced()).textSelection(.enabled) }; Button("Restart runtime") { Task { try? await store.api.restartProfileRuntime(profile.name); await load() } }; Button("Restart gateway") { Task { try? await store.api.restartGateway(profile: profile.name); await load() } } }
+        Section("Avatar") { PhotosPicker(selection: $photo, matching: .images) { Label("Upload profile avatar", systemImage: "photo") }.onChange(of: photo) { _, item in Task { await upload(item) } }; Button("Reset profile avatar", role: .destructive) { Task { try? await store.api.resetProfileAvatar(profile.name); await store.refreshProfiles() } } }
+        Section("Backup") { Button("Export profile") { Task { await export() } }; if let exportedURL { ShareLink(item: exportedURL) { Label("Share exported archive", systemImage: "square.and.arrow.up") } }; Button("Import profile archive") { importing = true } }
+    }.navigationTitle(profile.name).task { await load() }.refreshable { await load() }.fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in if case let .success(url) = result { Task { await importArchive(url) } } } }
+    private func load() async { if let values = try? await store.api.profileRuntimes() { runtime = values.first { $0.id == profile.name } } }
+    private func upload(_ item: PhotosPickerItem?) async { guard let data = try? await item?.loadTransferable(type: Data.self), let mime = item?.supportedContentTypes.first?.preferredMIMEType else { return }; do { try await store.api.setProfileAvatar(profile.name, dataURL: "data:\(mime);base64,\(data.base64EncodedString())"); await store.refreshProfiles() } catch { store.errorMessage = error.localizedDescription } }
+    private func export() async { do { let data = try await store.api.exportProfile(profile.name); let url = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-profile-\(profile.name).tar.gz"); try data.write(to: url, options: .atomic); exportedURL = url } catch { store.errorMessage = error.localizedDescription } }
+    private func importArchive(_ url: URL) async { let scoped = url.startAccessingSecurityScopedResource(); defer { if scoped { url.stopAccessingSecurityScopedResource() } }; do { try await store.api.importProfile(data: Data(contentsOf: url), name: url.lastPathComponent); await store.refreshProfiles(); store.notify(String(localized: "Profile imported")) } catch { store.errorMessage = error.localizedDescription } }
+}
+
+struct EkkoHubView: View {
+    var body: some View { List {
+        Section("Ekko") { NavigationLink { EkkoConfigurationView() } label: { SettingsRow(icon: "slider.horizontal.3", color: .purple, title: "Configuration", subtitle: "Runtime, model, tools and delegation") } }
+        Section("Knowledge") { NavigationLink { EkkoMemoryView() } label: { SettingsRow(icon: "brain", color: .orange, title: "Ekko memory") }; NavigationLink { EkkoSkillsView() } label: { SettingsRow(icon: "square.stack.3d.up", color: .indigo, title: "Ekko skills") } }
+        Section("Connections") { NavigationLink { EkkoMCPView() } label: { SettingsRow(icon: "server.rack", color: .cyan, title: "Ekko MCP") } }
+    }.navigationTitle("Ekko").listStyle(.insetGrouped) }
+}
+
+private struct EkkoConfigurationView: View {
+    @EnvironmentObject private var store: AppStore
+    @State private var root: JSON = [:]; @State private var loading = true
+    var body: some View { Form { if !loading { Section("Runtime") { Stepper("Maximum steps: \(int("runtime", "maxSteps", 30))", value: intBinding("runtime", "maxSteps", 30), in: 1...500) }; Section("Model") { TextField("Default provider", text: stringBinding("model", "defaultProvider")); TextField("Default model", text: stringBinding("model", "defaultModel")); Picker("Reasoning", selection: stringBinding("model", "reasoningEffort")) { ForEach(["none", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { Text($0).tag($0) } } }; Section("Capabilities") { Toggle("Tools enabled", isOn: boolBinding(["tools", "enabled"], true)); Toggle("Tool approvals", isOn: boolBinding(["tools", "approvals", "enabled"], true)); Toggle("Memory enabled", isOn: boolBinding(["memory", "enabled"], true)); Toggle("Skills enabled", isOn: boolBinding(["skills", "enabled"], true)); Toggle("Background delegation", isOn: boolBinding(["delegation", "backgroundEnabled"], true)) }; Button("Save settings") { Task { await save() } } } }.navigationTitle("Ekko configuration").overlay { if loading { ProgressView() } }.task { await load() } }
+    private var config: JSON { root.object("config") }
+    private func value(_ path: [String]) -> Any? { var current: Any = config; for key in path { guard let next = (current as? JSON)?[key] else { return nil }; current = next }; return current }
+    private func set(_ path: [String], _ value: Any) { var cfg = config; func assign(_ object: inout JSON, _ keys: ArraySlice<String>) { guard let key = keys.first else { return }; if keys.count == 1 { object[key] = value; return }; var child = object.object(key); assign(&child, keys.dropFirst()); object[key] = child }; assign(&cfg, path[...]); root["config"] = cfg }
+    private func int(_ section: String, _ key: String, _ fallback: Int) -> Int { (value([section,key]) as? NSNumber)?.intValue ?? fallback }
+    private func intBinding(_ section: String, _ key: String, _ fallback: Int) -> Binding<Int> { Binding(get: { int(section,key,fallback) }, set: { set([section,key], $0) }) }
+    private func stringBinding(_ section: String, _ key: String) -> Binding<String> { Binding(get: { value([section,key]) as? String ?? "" }, set: { set([section,key], $0) }) }
+    private func boolBinding(_ path: [String], _ fallback: Bool) -> Binding<Bool> { Binding(get: { value(path) as? Bool ?? fallback }, set: { set(path, $0) }) }
+    private func load() async { loading = true; do { root = try await store.api.ekkoConfig() } catch { store.errorMessage = error.localizedDescription }; loading = false }
+    private func save() async { do { try await store.api.saveEkkoConfig(config); store.notify(String(localized: "Settings saved")); await load() } catch { store.errorMessage = error.localizedDescription } }
+}
+
+private struct EkkoMemoryView: View {
+    @EnvironmentObject private var store: AppStore
+    @State private var items: [EkkoMemoryItem] = []; @State private var query = ""; @State private var editing: EkkoMemoryItem?
+    var body: some View { List { SearchBar(text: $query); ForEach(items) { item in Button { editing = item } label: { VStack(alignment: .leading, spacing: 5) { Text(item.title.nilIfEmpty ?? item.content).font(.headline).foregroundStyle(.primary).lineLimit(2); Text(item.content).font(.caption).foregroundStyle(.secondary).lineLimit(3); StatusPill(text: item.status, color: item.status == "active" ? .green : .gray) } }.swipeActions { Button(role: .destructive) { Task { try? await store.api.deleteEkkoMemory(item); await load() } } label: { Label("Delete", systemImage: "trash") } } } }.navigationTitle("Ekko memory").task(id: query) { try? await Task.sleep(for: .milliseconds(250)); await load() }.sheet(item: $editing) { EkkoMemoryEditor(item: $0) { await load() } } }
+    private func load() async { items = (try? await store.api.ekkoMemory(query: query)) ?? items }
+}
+
+private struct EkkoMemoryEditor: View { @EnvironmentObject var store: AppStore; @Environment(\.dismiss) var dismiss; @State var item: EkkoMemoryItem; let saved: () async -> Void
+    var body: some View { NavigationStack { Form { TextField("Title", text: $item.title); TextField("Content", text: $item.content, axis: .vertical).lineLimit(5...15); TextField("Tags", text: Binding(get: { item.tags.joined(separator: ", ") }, set: { item.tags = $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } })) }.navigationTitle("Edit memory").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { do { try await store.api.updateEkkoMemory(item); await saved(); dismiss() } catch { store.errorMessage = error.localizedDescription } } } } } } }
 }
 
 struct MoreSettingsView: View {

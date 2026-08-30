@@ -122,6 +122,23 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(run.nodes.first?.agent, "codex")
     }
 
+    func testEkkoAndProviderCanonicalPayloads() {
+        let memory = EkkoMemoryItem(["id": "m1", "title": "Preference", "content": "Arabic", "status": "active", "revision": 4, "tags": ["user"]])
+        XCTAssertEqual(memory.revision, 4)
+        XCTAssertEqual(memory.tags, ["user"])
+        let provider = ProviderSummary(["provider": "groq", "label": "Groq", "models": ["m1", "m2"], "api_key": "stored", "model_refreshable": true])
+        XCTAssertTrue(provider.credentialConfigured)
+        XCTAssertTrue(provider.refreshable)
+        XCTAssertEqual(provider.models.count, 2)
+    }
+
+    func testProfileRuntimeStatusParsesBridgeAndGateway() {
+        let status = ProfileRuntime(["profile": "main", "bridge": ["running": true], "gateway": ["running": false, "url": "http://127.0.0.1:3000"]])
+        XCTAssertTrue(status.bridgeRunning)
+        XCTAssertFalse(status.gatewayRunning)
+        XCTAssertEqual(status.gatewayURL, "http://127.0.0.1:3000")
+    }
+
     func testMarkdownParsesArabicHeadingsListsAndInlineBold() throws {
         let source = "### البريد غير المقروء\n- **635** عاجلة وتتطلب إجراء.\n  - طلبات معلومات.\n\n1. **تنظيف البريد**"
         let blocks = ChatMarkdownParser.parse(source)

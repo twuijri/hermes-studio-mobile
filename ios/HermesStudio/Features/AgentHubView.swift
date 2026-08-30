@@ -22,6 +22,7 @@ struct AgentHubView: View {
                 NavigationLink { MCPView() } label: { AgentToolRow(icon: "server.rack", color: .cyan, title: "MCP", detail: "Connect tools and external servers") }
             }
             Section("Intelligence") {
+                NavigationLink { EkkoHubView() } label: { AgentToolRow(icon: "sparkles", color: .purple, title: "Ekko", detail: "Built-in agent configuration, memory and tools") }
                 NavigationLink { StudioSectionSettings(section: .memory) } label: { AgentToolRow(icon: "lightbulb.max.fill", color: .yellow, title: "Memory", detail: "Control long-term context") }
                 NavigationLink { ModelsView() } label: { AgentToolRow(icon: "cpu.fill", color: .mint, title: "Models", detail: "Choose models and providers") }
             }

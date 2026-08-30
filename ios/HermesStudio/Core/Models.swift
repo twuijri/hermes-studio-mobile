@@ -261,6 +261,35 @@ struct CodingAgentTool: Identifiable, Hashable {
     }
 }
 
+struct ProfileRuntime: Identifiable, Hashable {
+    let id: String
+    var bridgeRunning: Bool
+    var gatewayRunning: Bool
+    var gatewayURL: String
+    var error: String
+    init(_ json: JSON) { id = json.string("profile"); let bridge = json.object("bridge"), gateway = json.object("gateway"); bridgeRunning = bridge.bool("running"); gatewayRunning = gateway.bool("running"); gatewayURL = gateway.string("url"); error = bridge.string("error").nilIfEmpty ?? gateway.string("error") }
+}
+
+struct EkkoMemoryItem: Identifiable, Hashable {
+    let id: String; var title: String; var content: String; var status: String; var revision: Int; var tags: [String]
+    init(_ json: JSON) { id = json.string("id"); title = json.string("title"); content = json.string("content"); status = json.string("status"); revision = json.int("revision"); tags = json.strings("tags") }
+}
+
+struct EkkoSkillItem: Identifiable, Hashable {
+    let id: String; var name: String; var description: String; var category: String; var source: String; var enabled: Bool; var content: String
+    init(_ json: JSON) { name = json.string("name"); id = name; description = json.string("description"); category = json.string("category"); source = json.string("source"); enabled = json.bool("enabled"); content = json.string("content") }
+}
+
+struct EkkoMCPItem: Identifiable, Hashable {
+    let id: String; var name: String; var managed: Bool; var enabled: Bool; var command: String; var arguments: [String]; var url: String
+    init(_ json: JSON) { name = json.string("name"); id = name; managed = json.bool("managed"); let config = json.object("config"); enabled = config.bool("enabled", default: true); command = config.string("command"); arguments = config.strings("args"); url = config.string("url") }
+}
+
+struct ProviderSummary: Identifiable, Hashable {
+    let id: String; var label: String; var baseURL: String; var models: [String]; var credentialConfigured: Bool; var refreshable: Bool
+    init(_ json: JSON) { id = json.string("provider", "id", "provider_key"); label = json.string("label").nilIfEmpty ?? id; baseURL = json.string("base_url"); models = json.strings("models"); credentialConfigured = !json.string("api_key").isEmpty || json.bool("credential_configured"); refreshable = json.bool("model_refreshable") }
+}
+
 struct Message: Identifiable, Hashable {
     let id: String
     let role: String
