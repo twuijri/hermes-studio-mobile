@@ -199,6 +199,8 @@ data class UiState(
     val logEntries: List<StudioLogEntry> = emptyList(),
     val appRelay: AppRelayStatus? = null,
     val studioDevices: List<StudioDevice> = emptyList(),
+    val appConnections: List<AppConnection> = emptyList(),
+    val appAuthorization: AppAuthorization? = null,
 )
 
 data class WeixinQrUi(
@@ -485,16 +487,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun copyStudioFile(file: StudioFile, destination: String) = launchWork(work = { api.copyStudioFile(currentProfile(), file.path, destination) }, onSuccess = { openFiles(_state.value.filesPath) })
     fun deleteStudioFile(file: StudioFile) = launchWork(work = { api.deleteStudioFile(currentProfile(), file) }, onSuccess = { openFiles(_state.value.filesPath) })
     fun studioFileUrl(file: StudioFile): String = api.studioFilePreviewUrl(currentProfile(), file.path)
+    fun uploadStudioFile(bytes: ByteArray, name: String, mime: String) = launchWork(work = { api.uploadStudioFile(currentProfile(), _state.value.filesPath, bytes, name, mime) }, onSuccess = { openFiles(_state.value.filesPath) })
 
     fun openLogs() = launchWork(work = { api.studioLogs() }, onSuccess = { logs -> _state.update { it.copy(screen = Screen.Logs, studioLogs = logs, openLog = null, error = null) } })
     fun openLog(log: StudioLogFile) = launchWork(work = { api.studioLog(log.name, currentProfile()) }, onSuccess = { entries -> _state.update { it.copy(openLog = log, logEntries = entries) } })
     fun closeLog() = _state.update { it.copy(openLog = null, logEntries = emptyList()) }
 
-    fun openConnections() = launchWork(work = { api.appRelayStatus() to api.studioDevices() }, onSuccess = { (relay, devices) -> _state.update { it.copy(screen = Screen.Connections, appRelay = relay, studioDevices = devices, error = null) } })
+    fun openConnections() = launchWork(work = { Triple(api.appRelayStatus(), api.studioDevices(), api.appConnections()) }, onSuccess = { (relay, devices, connections) -> _state.update { it.copy(screen = Screen.Connections, appRelay = relay, studioDevices = devices, appConnections = connections, error = null) } })
     fun connectRelay() = launchWork(work = { api.connectAppRelay() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
     fun refreshRelayCode() = launchWork(work = { api.refreshAppRelayCode() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
     fun disconnectRelay() = launchWork(work = { api.disconnectAppRelay() }, onSuccess = { relay -> _state.update { it.copy(appRelay = relay) } })
     fun deviceAction(device: StudioDevice, action: String) = launchWork(work = { api.deviceAction(device.id, action) }, onSuccess = { openConnections() })
+    fun createAppAuthorization(cloud: Boolean) = launchWork(work = { api.createAppAuthorization(cloud) }, onSuccess = { auth -> _state.update { it.copy(appAuthorization = auth) } })
+    fun revokeAppConnection(connection: AppConnection) = launchWork(work = { api.revokeAppConnection(connection.id) }, onSuccess = { openConnections() })
+
+    fun switchActiveProfile(name: String) = launchWork(work = { api.switchActiveProfile(name) }, onSuccess = { selectProfile(name); refreshProfiles() })
+    fun importProfile(bytes: ByteArray, name: String) = launchWork(work = { api.importProfile(bytes, name) }, onSuccess = { refreshProfiles() })
+    fun profileExportUrl(name: String): String = api.profileExportUrl(name)
+    fun updateProfileAvatar(name: String, dataUrl: String) = launchWork(work = { api.updateProfileAvatar(name, dataUrl) }, onSuccess = { refreshProfiles() })
+    fun clearProfileAvatar(name: String) = launchWork(work = { api.clearProfileAvatar(name) }, onSuccess = { refreshProfiles() })
+
+    fun saveEkkoSkill(name: String, content: String, creating: Boolean) = launchWork(work = { if (creating) api.createEkkoSkill(currentProfile(), name, content) else api.saveEkkoSkill(currentProfile(), name, content) }, onSuccess = { openEkkoHub() })
+    fun deleteEkkoSkill(skill: SkillInfo) = launchWork(work = { api.deleteEkkoSkill(currentProfile(), skill.name) }, onSuccess = { openEkkoHub() })
+    fun importEkkoSkill(bytes: ByteArray, name: String) = launchWork(work = { api.importEkkoSkill(currentProfile(), bytes, name) }, onSuccess = { openEkkoHub() })
 
     fun startGlobalAgentConversation() {
         startNewConversation(AgentRuntimeSelection("ekko-agent", "ekko", "Global Agent", globalAgent = true))

@@ -783,4 +783,9 @@
     <string name="logs_title">السجلات</string><string name="logs_hub_note">تشخيصات الاستديو والجسر والوكلاء</string>
     <string name="connections_title">الاتصالات</string><string name="connections_hub_note">ترحيل التطبيق وأجهزة الاستديو المرتبطة</string><string name="app_relay_title">ترحيل التطبيق</string><string name="devices_title">الأجهزة</string><string name="connected">متصل</string><string name="disconnected">غير متصل</string><string name="connect">اتصال</string><string name="disconnect">قطع الاتصال</string><string name="refresh_pairing">رمز اقتران جديد</string>
     <string name="insights_by_agent">حسب الوكيل</string><string name="insights_daily">الاستهلاك اليومي</string>
+    <string name="files_upload">رفع ملف</string><string name="files_download">تنزيل أو فتح</string><string name="files_copy_to">نسخ إلى مسار</string>
+    <string name="authorize_lan">تفويض شبكة LAN</string><string name="authorize_cloud">تفويض سحابي</string><string name="authorization_code">رمز التفويض</string><string name="app_connections_title">التطبيقات المفوّضة</string>
+    <string name="profile_make_active">جعله البروفايل النشط</string><string name="profile_export">تصدير البروفايل</string>
+    <string name="ekko_skill_new">مهارة Ekko جديدة</string>
+    <string name="profile_import">استيراد بروفايل</string><string name="profile_avatar">اختيار صورة البروفايل</string><string name="profile_avatar_clear">حذف صورة البروفايل</string>
 </resources>

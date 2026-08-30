@@ -40,6 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +50,10 @@ fun EkkoHubScreen(state: UiState, viewModel: AppViewModel) {
     var editMemory by remember { mutableStateOf<EkkoMemory?>(null) }
     var editMcp by remember { mutableStateOf<EkkoMcpServer?>(null) }
     var newMcp by remember { mutableStateOf(false) }
+    var newSkill by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val importSkill = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri ?: return@rememberLauncherForActivityResult; val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult; viewModel.importEkkoSkill(bytes, uri.lastPathSegment ?: "skill.zip") }
+    if (newSkill) EkkoSkillDialog({ newSkill = false }) { name, content -> newSkill = false; viewModel.saveEkkoSkill(name, content, true) }
     editMemory?.let { memory -> EkkoMemoryDialog(memory, { editMemory = null }, { title, content -> editMemory = null; viewModel.saveEkkoMemory(memory, title, content) }) }
     if (newMcp || editMcp != null) {
         val original = editMcp?.name
@@ -59,8 +66,8 @@ fun EkkoHubScreen(state: UiState, viewModel: AppViewModel) {
             items(state.ekkoMemories, key = { it.id }) { memory ->
                 HubCard { Column(Modifier.weight(1f)) { Text(memory.title.ifBlank { memory.id }, fontWeight = FontWeight.Bold); Text(memory.content, maxLines = 3); Text(memory.status + " · r" + memory.revision, style = MaterialTheme.typography.labelSmall) }; TextButton(onClick = { editMemory = memory }) { Text(stringResource(R.string.action_edit)) }; TextButton(onClick = { viewModel.deleteEkkoMemory(memory) }) { Text(stringResource(R.string.action_delete)) } }
             }
-            item { SectionTitle(stringResource(R.string.ekko_skills_title), state.ekkoSkills.sumOf { it.skills.size }) }
-            state.ekkoSkills.flatMap { it.skills }.forEach { skill -> item(key = "skill-${skill.name}") { HubCard { Column(Modifier.weight(1f)) { Text(skill.name, fontWeight = FontWeight.Bold); Text(skill.description, maxLines = 2) }; Switch(skill.enabled, { viewModel.toggleEkkoSkill(skill) }) } } }
+            item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { SectionTitle(stringResource(R.string.ekko_skills_title), state.ekkoSkills.sumOf { it.skills.size }, Modifier.weight(1f)); TextButton(onClick = { newSkill = true }) { Text(stringResource(R.string.action_add)) }; TextButton(onClick = { importSkill.launch("application/zip") }) { Text(stringResource(R.string.files_upload)) } } }
+            state.ekkoSkills.flatMap { it.skills }.forEach { skill -> item(key = "skill-${skill.name}") { HubCard { Column(Modifier.weight(1f)) { Text(skill.name, fontWeight = FontWeight.Bold); Text(skill.description, maxLines = 2) }; Switch(skill.enabled, { viewModel.toggleEkkoSkill(skill) }); TextButton(onClick = { viewModel.deleteEkkoSkill(skill) }) { Text(stringResource(R.string.action_delete)) } } } }
             item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { SectionTitle(stringResource(R.string.ekko_mcp_title), state.ekkoMcpServers.size, Modifier.weight(1f)); Button(onClick = { newMcp = true }) { Text(stringResource(R.string.action_add)) } } }
             items(state.ekkoMcpServers, key = { it.name }) { server -> HubCard { Column(Modifier.weight(1f)) { Text(server.name, fontWeight = FontWeight.Bold); Text(server.transport) }; Switch(server.enabled, { viewModel.toggleEkkoMcp(server) }); TextButton(onClick = { viewModel.testEkkoMcp(server) }) { Text(stringResource(R.string.action_test)) }; TextButton(onClick = { editMcp = server }) { Text(stringResource(R.string.action_edit)) }; TextButton(onClick = { viewModel.deleteEkkoMcp(server) }) { Text(stringResource(R.string.action_delete)) } } }
         }
@@ -72,3 +79,4 @@ fun EkkoHubScreen(state: UiState, viewModel: AppViewModel) {
 
 @Composable private fun EkkoMemoryDialog(memory: EkkoMemory, dismiss: () -> Unit, save: (String, String) -> Unit) { var title by remember { mutableStateOf(memory.title) }; var content by remember { mutableStateOf(memory.content) }; AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.ekko_memory_edit)) }, text = { Column { OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.ekko_memory_name)) }); OutlinedTextField(content, { content = it }, label = { Text(stringResource(R.string.ekko_memory_content)) }, minLines = 5) } }, confirmButton = { TextButton(onClick = { save(title, content) }) { Text(stringResource(R.string.action_save)) } }, dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.action_cancel)) } }) }
 @Composable private fun EkkoMcpDialog(server: EkkoMcpServer?, dismiss: () -> Unit, save: (String, String) -> Unit) { var name by remember { mutableStateOf(server?.name.orEmpty()) }; var config by remember { mutableStateOf(server?.config ?: "{\n  \"transport\": \"stdio\",\n  \"command\": \"\"\n}") }; AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.ekko_mcp_edit)) }, text = { Column { OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.mcp_name)) }); OutlinedTextField(config, { config = it }, label = { Text(stringResource(R.string.mcp_advanced_json)) }, minLines = 7) } }, confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { save(name, config) }) { Text(stringResource(R.string.action_save)) } }, dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.action_cancel)) } }) }
+@Composable private fun EkkoSkillDialog(dismiss: () -> Unit, save: (String, String) -> Unit) { var name by remember { mutableStateOf("") }; var content by remember { mutableStateOf("---\nname: \ndescription: \n---\n") }; AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.ekko_skill_new)) }, text = { Column { OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.mcp_name)) }); OutlinedTextField(content, { content = it }, minLines = 8) } }, confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { save(name, content) }) { Text(stringResource(R.string.action_save)) } }, dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.action_cancel)) } }) }

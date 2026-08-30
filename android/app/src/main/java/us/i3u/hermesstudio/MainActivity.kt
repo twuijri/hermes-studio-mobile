@@ -1536,6 +1536,10 @@ private fun formatToolDuration(seconds: Double): String = when {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
+    val context = LocalContext.current
+    var avatarTarget by remember { mutableStateOf<String?>(null) }
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri ?: return@rememberLauncherForActivityResult; val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult; val mime = context.contentResolver.getType(uri) ?: "image/png"; avatarTarget?.let { viewModel.updateProfileAvatar(it, "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)) } }
+    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri ?: return@rememberLauncherForActivityResult; val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@rememberLauncherForActivityResult; viewModel.importProfile(bytes, uri.lastPathSegment ?: "profile.tar.gz") }
     var confirmSignOut by remember { mutableStateOf(false) }
     var manage by remember { mutableStateOf<Profile?>(null) }
     var rename by remember { mutableStateOf<Profile?>(null) }
@@ -1561,6 +1565,10 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
             TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; viewModel.restartProfile(profile.name) }) {
                 Text(stringResource(R.string.profile_restart), Modifier.fillMaxWidth())
             }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; viewModel.switchActiveProfile(profile.name) }) { Text(stringResource(R.string.profile_make_active), Modifier.fillMaxWidth()) }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(viewModel.profileExportUrl(profile.name)))) }) { Text(stringResource(R.string.profile_export), Modifier.fillMaxWidth()) }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { avatarTarget = profile.name; manage = null; avatarPicker.launch("image/*") }) { Text(stringResource(R.string.profile_avatar), Modifier.fillMaxWidth()) }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; viewModel.clearProfileAvatar(profile.name) }) { Text(stringResource(R.string.profile_avatar_clear), Modifier.fillMaxWidth()) }
         }
     }
     rename?.let { profile ->
@@ -1609,6 +1617,7 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
                 subtitle = state.account?.let { stringResource(R.string.profiles_signed_in, it) },
                 onBack = { viewModel.back() },
                 actions = {
+                    IconButton(onClick = { importPicker.launch("*/*") }) { Icon(Icons.Filled.Download, contentDescription = stringResource(R.string.profile_import), tint = MaterialTheme.colorScheme.primary) }
                     IconButton(onClick = { creating = true }) {
                         Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.profiles_new), tint = MaterialTheme.colorScheme.primary)
                     }

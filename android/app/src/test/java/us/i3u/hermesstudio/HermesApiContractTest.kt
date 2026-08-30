@@ -189,6 +189,26 @@ class HermesApiContractTest {
     }
 
     @Test
+    fun `app connections and authorization use canonical endpoints`() {
+        enqueue("""{"connections":[{"id":7,"device_name":"Pixel","connection_type":"lan","active":true,"online":true}]}""")
+        assertEquals("Pixel", api.appConnections().single().name)
+        assertEquals("/api/app-connections", server.takeRequest().path)
+
+        enqueue("""{"connection_type":"cloud","matching_code":"483921","expires_at":123} """)
+        assertEquals("483921", api.createAppAuthorization(true).code)
+        assertEquals("/api/app-connections/authorization-codes/cloud", server.takeRequest().path)
+    }
+
+    @Test
+    fun `active profile switch uses Studio field name`() {
+        enqueue("""{"success":true,"active":"manager"}""")
+        api.switchActiveProfile("manager")
+        val request = server.takeRequest()
+        assertEquals("/api/hermes/profiles/active", request.path)
+        assertEquals("manager", JSONObject(request.body.readUtf8()).getString("name"))
+    }
+
+    @Test
     fun `conversation history keeps the numeric Studio message timestamp`() {
         enqueue(
             """

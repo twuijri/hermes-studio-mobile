@@ -769,6 +769,9 @@ class HermesApi(
     fun copyStudioFile(profile: String, source: String, destination: String) { call("/api/studio/files/copy", "POST", JSONObject().put("srcPath", source).put("destPath", destination), profile) }
     fun deleteStudioFile(profile: String, file: StudioFile) { call("/api/studio/files/delete", "DELETE", JSONObject().put("path", file.path).put("recursive", file.directory), profile) }
     fun studioFilePreviewUrl(profile: String, path: String): String = url("/api/studio/files/preview?path=${enc(path)}&profile=${enc(profile)}&token=${enc(token)}")
+    fun uploadStudioFile(profile: String, directory: String, bytes: ByteArray, filename: String, mime: String) {
+        multipart("/api/studio/files/upload?path=${enc(directory)}", "file", bytes, filename, mime, emptyMap(), profile)
+    }
 
     fun studioLogs(): List<StudioLogFile> {
         val array = call("/api/studio/logs").optJSONArray("files") ?: JSONArray()
@@ -794,6 +797,33 @@ class HermesApi(
         } }
     }
     fun deviceAction(id: String, action: String) { call("/api/devices/${enc(id)}/$action", "POST", JSONObject()) }
+
+    fun appConnections(): List<AppConnection> {
+        val array = call("/api/app-connections").optJSONArray("connections") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item -> AppConnection(item.optInt("id"), firstNonBlank(item, "device_name", "device_model") ?: item.optString("device_code"), item.optString("connection_type"), item.optBoolean("active"), item.optBoolean("online")) } }.filter { it.id > 0 }
+    }
+    fun createAppAuthorization(cloud: Boolean): AppAuthorization {
+        val result = call("/api/app-connections/authorization-codes/${if (cloud) "cloud" else "lan"}", "POST", JSONObject())
+        return AppAuthorization(firstNonBlank(result, "matching_code", "authorization_code", "code") ?: "", result.firstLong("expires_at", "expiresAt") ?: 0, result.optString("connection_type").ifBlank { if (cloud) "cloud" else "lan" })
+    }
+    fun revokeAppConnection(id: Int) { call("/api/app-connections/$id", "DELETE") }
+
+    fun switchActiveProfile(name: String) { call("/api/hermes/profiles/active", "PUT", JSONObject().put("name", name)) }
+    fun updateProfileAvatar(name: String, dataUrl: String) { call("/api/hermes/profiles/${enc(name)}/avatar", "PUT", JSONObject().put("avatar", JSONObject().put("type", "image").put("dataUrl", dataUrl))) }
+    fun clearProfileAvatar(name: String) { call("/api/hermes/profiles/${enc(name)}/avatar", "DELETE") }
+    fun importProfile(bytes: ByteArray, filename: String) { multipart("/api/hermes/profiles/import", "file", bytes, filename, "application/gzip", emptyMap(), null) }
+    fun profileExportUrl(name: String): String = url("/api/hermes/profiles/${enc(name)}/export?token=${enc(token)}")
+
+    fun ekkoSkillDetail(profile: String, name: String): String {
+        val skill = call("/api/ekko/skills/${enc(name)}", profile = profile).optJSONObject("skill") ?: JSONObject()
+        return skill.optString("content")
+    }
+    fun createEkkoSkill(profile: String, name: String, content: String) { call("/api/ekko/skills", "POST", JSONObject().put("name", name).put("content", content), profile) }
+    fun saveEkkoSkill(profile: String, name: String, content: String) { call("/api/ekko/skills/${enc(name)}", "PUT", JSONObject().put("content", content), profile) }
+    fun deleteEkkoSkill(profile: String, name: String) { call("/api/ekko/skills/${enc(name)}", "DELETE", profile = profile) }
+    fun importEkkoSkill(profile: String, bytes: ByteArray, filename: String) { multipart("/api/ekko/skills/import", "file", bytes, filename, "application/zip", emptyMap(), profile) }
+    fun ekkoExternalDirectories(profile: String): List<String> = strings(call("/api/ekko/skills/external-directories", profile = profile).optJSONArray("directories"))
+    fun saveEkkoExternalDirectories(profile: String, dirs: List<String>) { call("/api/ekko/skills/external-directories", "PUT", JSONObject().put("directories", JSONArray(dirs)), profile) }
 
     /** POST /api/hermes/sessions/{id}/model */
     fun setSessionModel(sessionId: String, model: String, provider: String?) {

@@ -784,4 +784,9 @@
     <string name="logs_title">Logs</string><string name="logs_hub_note">Studio, bridge and agent diagnostics</string>
     <string name="connections_title">Connections</string><string name="connections_hub_note">App Relay and paired Studio devices</string><string name="app_relay_title">App Relay</string><string name="devices_title">Devices</string><string name="connected">Connected</string><string name="disconnected">Disconnected</string><string name="connect">Connect</string><string name="disconnect">Disconnect</string><string name="refresh_pairing">New pairing code</string>
     <string name="insights_by_agent">By agent</string><string name="insights_daily">Daily usage</string>
+    <string name="files_upload">Upload</string><string name="files_download">Download or open</string><string name="files_copy_to">Copy to path</string>
+    <string name="authorize_lan">Authorize LAN</string><string name="authorize_cloud">Authorize cloud</string><string name="authorization_code">Authorization code</string><string name="app_connections_title">Authorized apps</string>
+    <string name="profile_make_active">Make active profile</string><string name="profile_export">Export profile</string>
+    <string name="ekko_skill_new">New Ekko skill</string>
+    <string name="profile_import">Import profile</string><string name="profile_avatar">Choose profile avatar</string><string name="profile_avatar_clear">Remove profile avatar</string>
 </resources>
