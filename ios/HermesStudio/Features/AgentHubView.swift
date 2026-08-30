@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreImage.CIFilterBuiltins
 
 struct AgentHubView: View {
     @EnvironmentObject private var store: AppStore
@@ -278,13 +279,14 @@ private struct StudioLogDetail: View { @EnvironmentObject var store: AppStore; l
 
 struct StudioConnectionsView: View {
     @EnvironmentObject var store: AppStore
-    @State var relay: AppRelayInfo?; @State var connections: [AppConnectionItem] = []; @State var devices: [StudioDevice] = []; @State var authorization = ""; @State var loading = true
+    @State var relay: AppRelayInfo?; @State var connections: [AppConnectionItem] = []; @State var devices: [StudioDevice] = []; @State var peers: [PeerConnection] = []; @State var authorization = ""; @State var pairingPayload = ""; @State var manualURL = ""; @State var requesting = false; @State var loading = true
     var body: some View {
         List {
             Section("App Relay") {
                 LabeledContent("Status") { StatusPill(text: relay?.connected == true ? String(localized: "Connected") : String(localized: "Disconnected"), color: relay?.connected == true ? .green : .gray) }
                 Picker("Route", selection: Binding(get: { relay?.route ?? "official" }, set: { route in Task { relay = try? await store.api.appRelay("route", method: "PUT", body: ["route": route]) } })) { Text("Official").tag("official"); Text("Cloudflare").tag("cloudflare") }
                 if let code = relay?.pairingCode.nilIfEmpty { LabeledContent("Pairing code", value: code).textSelection(.enabled) }
+                if let code = relay?.pairingCode.nilIfEmpty { QRImageView(value: code).frame(maxWidth: .infinity) }
                 Button(relay?.connected == true ? "Disconnect relay" : "Connect relay") { Task { relay = try? await store.api.appRelay(relay?.connected == true ? "disconnect" : "connect", method: "POST") } }
                 Button("Refresh pairing code") { Task { relay = try? await store.api.appRelay("pairing-code", method: "POST") } }
             }
@@ -292,13 +294,26 @@ struct StudioConnectionsView: View {
                 Button("Create LAN pairing code") { Task { let value = try? await store.api.appAuthorization(cloud: false); authorization = value?.string("authorization_code", "qr_payload") ?? "" } }
                 Button("Create cloud matching code") { Task { let value = try? await store.api.appAuthorization(cloud: true); authorization = value?.string("matching_code", "qr_payload") ?? "" } }
                 if !authorization.isEmpty { Text(authorization).font(.title3.monospaced()).textSelection(.enabled) }
+                if !authorization.isEmpty { QRImageView(value: authorization).frame(maxWidth: .infinity) }
                 ForEach(connections) { item in HStack { VStack(alignment: .leading) { Text(item.name); Text("\(item.model) · \(item.type)").font(.caption).foregroundStyle(.secondary) }; Spacer(); StatusPill(text: item.online ? String(localized: "Online") : String(localized: "Offline"), color: item.online ? .green : .gray) }.swipeActions { Button(role: .destructive) { Task { try? await store.api.deleteAppConnection(item.id); await load() } } label: { Label("Delete", systemImage: "trash") } } }
             }
             Section("Studio devices") {
                 Button("Scan devices") { Task { devices = (try? await store.api.devices(scan: true)) ?? devices } }
-                ForEach(devices) { device in VStack(alignment: .leading, spacing: 6) { HStack { Text(device.name).font(.headline); Spacer(); StatusPill(text: device.online ? String(localized: "Online") : String(localized: "Offline"), color: device.online ? .green : .gray) }; Text(device.url).font(.caption.monospaced()).foregroundStyle(.secondary); HStack { if device.inbound == "pending" { Button("Approve") { Task { try? await store.api.deviceAction(device.id, action: "approve"); await load() } }; Button("Reject") { Task { try? await store.api.deviceAction(device.id, action: "reject"); await load() } } }; if device.inbound == "approved" || device.outbound == "approved" { Button("Connect") { Task { try? await store.api.deviceAction(device.id, action: "connect") } } } } } }
+                Button("Show pairing QR") { Task { let value = try? await store.api.devicePairingLink(); pairingPayload = value?.string("link", "code") ?? "" } }
+                Button("Request device by URL") { requesting = true }
+                if !pairingPayload.isEmpty { QRImageView(value: pairingPayload); Text(pairingPayload).font(.caption.monospaced()).textSelection(.enabled) }
+                ForEach(devices) { device in VStack(alignment: .leading, spacing: 6) { HStack { Text(device.name).font(.headline); Spacer(); StatusPill(text: device.online ? String(localized: "Online") : String(localized: "Offline"), color: device.online ? .green : .gray) }; Text(device.url).font(.caption.monospaced()).foregroundStyle(.secondary); HStack { if device.inbound == "pending" { Button("Approve") { Task { try? await store.api.deviceAction(device.id, action: "approve"); await load() } }; Button("Reject") { Task { try? await store.api.deviceAction(device.id, action: "reject"); await load() } } }; if device.inbound == "blocked" { Button("Unblock") { Task { try? await store.api.deviceAction(device.id, action: "unblock"); await load() } } } else { Button("Block") { Task { try? await store.api.deviceAction(device.id, action: "block"); await load() } } }; if device.inbound == "approved" || device.outbound == "approved" { Button("Connect") { Task { try? await store.api.deviceAction(device.id, action: "connect"); await load() } } } } } }
             }
-        }.navigationTitle("Connections").overlay { if loading { ProgressView() } }.task { await load() }.refreshable { await load() }
+            Section("Peer connections") {
+                ForEach(peers) { peer in HStack { VStack(alignment: .leading) { Text(peer.name); Text(peer.url).font(.caption.monospaced()).foregroundStyle(.secondary) }; Spacer(); Button("Disconnect", role: .destructive) { Task { try? await store.api.disconnectPeer(peer.id); await load() } } } }
+            }
+        }.navigationTitle("Connections").overlay { if loading { ProgressView() } }.task { await load() }.refreshable { await load() }.alert("Request device by URL", isPresented: $requesting) { TextField("https://device.local", text: $manualURL); Button("Request") { Task { try? await store.api.requestDevice(url: manualURL); await load() } }; Button("Cancel", role: .cancel) {} }
     }
-    private func load() async { loading = true; async let relayRequest = store.api.appRelay(); async let connectionsRequest = store.api.appConnections(); async let devicesRequest = store.api.devices(); relay = try? await relayRequest; connections = (try? await connectionsRequest) ?? connections; devices = (try? await devicesRequest) ?? devices; loading = false }
+    private func load() async { loading = true; async let relayRequest = store.api.appRelay(); async let connectionsRequest = store.api.appConnections(); async let devicesRequest = store.api.devices(); async let peersRequest = store.api.peerConnections(); relay = try? await relayRequest; connections = (try? await connectionsRequest) ?? connections; devices = (try? await devicesRequest) ?? devices; peers = (try? await peersRequest) ?? peers; loading = false }
+}
+
+struct QRImageView: View {
+    let value: String
+    private var image: UIImage? { let filter = CIFilter.qrCodeGenerator(); filter.message = Data(value.utf8); filter.correctionLevel = "M"; guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)), let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }; return UIImage(cgImage: cg) }
+    var body: some View { Group { if let image { Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(width: 190, height: 190).padding(10).background(.white, in: RoundedRectangle(cornerRadius: 14)) } } }
 }

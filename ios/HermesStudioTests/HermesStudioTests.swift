@@ -155,6 +155,19 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertTrue(device.online)
     }
 
+    func testPeerConnectionUsesCanonicalDeviceFields() {
+        let peer = PeerConnection(["id": "peer-1", "computer_name": "Desktop", "url": "https://desktop.local", "role": "client"])
+        XCTAssertEqual(peer.name, "Desktop")
+        XCTAssertEqual(peer.role, "client")
+    }
+
+    func testEkkoSkillDetailKeepsEditableContent() {
+        let skill = EkkoSkillItem(["name": "research", "category": "workspace", "source": "profile", "enabled": true, "content": "# Skill"])
+        XCTAssertEqual(skill.id, "research")
+        XCTAssertEqual(skill.content, "# Skill")
+        XCTAssertTrue(skill.enabled)
+    }
+
     func testMarkdownParsesArabicHeadingsListsAndInlineBold() throws {
         let source = "### البريد غير المقروء\n- **635** عاجلة وتتطلب إجراء.\n  - طلبات معلومات.\n\n1. **تنظيف البريد**"
         let blocks = ChatMarkdownParser.parse(source)

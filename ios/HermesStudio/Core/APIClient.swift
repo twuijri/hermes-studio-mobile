@@ -133,9 +133,14 @@ final class APIClient: @unchecked Sendable {
     func ekkoSkills(query: String = "") async throws -> [EkkoSkillItem] { try await array("/api/ekko/skills\(query.isEmpty ? "" : "?query=\(query.urlEncoded)")", keys: ["skills"]).map(EkkoSkillItem.init) }
     func ekkoSkill(_ name: String) async throws -> EkkoSkillItem { EkkoSkillItem(try await object("/api/ekko/skills/\(name.urlEncoded)").object("skill")) }
     func setEkkoSkill(_ name: String, enabled: Bool) async throws { _ = try await object("/api/ekko/skills/\(name.urlEncoded)/toggle", method: "PUT", body: ["enabled": enabled]) }
+    func createEkkoSkill(name: String, content: String, category: String) async throws { _ = try await object("/api/ekko/skills", method: "POST", body: ["name": name, "content": content, "category": category]) }
+    func deleteEkkoSkill(_ name: String) async throws { _ = try await object("/api/ekko/skills/\(name.urlEncoded)", method: "DELETE") }
     func saveEkkoSkill(_ item: EkkoSkillItem) async throws { _ = try await object("/api/ekko/skills/\(item.name.urlEncoded)", method: "PUT", body: ["content": item.content]) }
     func importEkkoSkill(data: Data, name: String) async throws { _ = try await multipart("/api/ekko/skills/import", data: data, name: name, mime: "application/octet-stream", field: "file", profile: nil) }
     func ekkoSkillFiles(_ name: String) async throws -> [JSON] { try await array("/api/ekko/skills/\(name.urlEncoded)/files", keys: ["files"]) }
+    func ekkoSkillFile(_ name: String, path: String) async throws -> String { try await object("/api/ekko/skills/\(name.urlEncoded)/file?path=\(path.urlEncoded)").string("content") }
+    func ekkoExternalDirectories() async throws -> [String] { try await object("/api/ekko/skills/external-directories").array("directories").compactMap { ($0 as? String) ?? ($0 as? JSON)?.string("path") } }
+    func saveEkkoExternalDirectories(_ directories: [String]) async throws { _ = try await object("/api/ekko/skills/external-directories", method: "PUT", body: ["directories": directories]) }
     func ekkoMCPServers() async throws -> [EkkoMCPItem] { try await array("/api/ekko/mcp/servers", keys: ["servers"]).map(EkkoMCPItem.init) }
     func saveEkkoMCP(_ server: EkkoMCPItem, existing: Bool) async throws { var config: JSON = ["enabled": server.enabled]; if !server.url.isEmpty { config["type"] = "streamable_http"; config["url"] = server.url } else { config["type"] = "stdio"; config["command"] = server.command; config["args"] = server.arguments }; _ = try await object(existing ? "/api/ekko/mcp/servers/\(server.name.urlEncoded)" : "/api/ekko/mcp/servers", method: existing ? "PATCH" : "POST", body: existing ? ["config": config] : ["name": server.name, "config": config]) }
     func deleteEkkoMCP(_ name: String) async throws { _ = try await object("/api/ekko/mcp/servers/\(name.urlEncoded)", method: "DELETE") }
@@ -265,6 +270,14 @@ final class APIClient: @unchecked Sendable {
     func appAuthorization(cloud: Bool, refresh: Bool = false, route: String = "official") async throws -> JSON { try await object("/api/app-connections/authorization-codes/\(cloud ? "cloud" : "lan")", method: "POST", body: cloud ? ["refresh": refresh, "route": route] : nil) }
     func devices(scan: Bool = false) async throws -> [StudioDevice] { try await object("/api/devices\(scan ? "/scan" : "")", method: scan ? "POST" : "GET").objects("devices").map(StudioDevice.init) }
     func deviceAction(_ id: String, action: String) async throws { _ = try await object("/api/devices/\(id.urlEncoded)/\(action)", method: "POST") }
+    func devicePairingLink() async throws -> JSON { try await object("/api/devices/pairing-link") }
+    func requestDevice(url: String) async throws { _ = try await object("/api/devices/manual-request", method: "POST", body: ["url": url]) }
+    func peerConnections() async throws -> [PeerConnection] { try await array("/api/devices/peer-connections", keys: ["connections"]).map(PeerConnection.init) }
+    func disconnectPeer(_ id: String) async throws { _ = try await object("/api/devices/peer-connections/\(id.urlEncoded)/disconnect", method: "POST") }
+    func providerAuthStatus(_ provider: String) async throws -> JSON { try await object("/api/hermes/auth/\(provider.urlEncoded)/status") }
+    func startProviderAuth(_ provider: String) async throws -> JSON { try await object("/api/hermes/auth/\(provider.urlEncoded)/start", method: "POST") }
+    func pollProviderAuth(_ provider: String, sessionID: String) async throws -> JSON { try await object("/api/hermes/auth/\(provider.urlEncoded)/poll/\(sessionID.urlEncoded)") }
+    func submitProviderAuth(_ provider: String, sessionID: String, code: String) async throws -> JSON { try await object("/api/hermes/auth/\(provider.urlEncoded)/submit/\(sessionID.urlEncoded)", method: "POST", body: ["code": code]) }
 
     func runtimePerformance() async throws -> RuntimePerformance {
         let root = try await object("/api/hermes/performance/runtime")
@@ -311,6 +324,8 @@ final class APIClient: @unchecked Sendable {
     }
 
     func createProfile(_ name: String) async throws { _ = try await object("/api/hermes/profiles", method: "POST", body: ["name": name]) }
+    func cloneProfile(_ name: String) async throws { _ = try await object("/api/hermes/profiles", method: "POST", body: ["name": name, "clone": true]) }
+    func activateProfile(_ name: String) async throws { _ = try await object("/api/hermes/profiles/active", method: "PUT", body: ["name": name]) }
     func renameProfile(_ name: String, to newName: String) async throws { _ = try await object("/api/hermes/profiles/\(name.urlEncoded)/rename", method: "POST", body: ["new_name": newName]) }
     func deleteProfile(_ name: String) async throws { _ = try await object("/api/hermes/profiles/\(name.urlEncoded)", method: "DELETE") }
     func restartGateway(profile: String) async throws { _ = try await object("/api/hermes/profiles/\(profile.urlEncoded)/gateway/restart", method: "POST") }
