@@ -376,7 +376,14 @@ final class APIClient: @unchecked Sendable {
     func deleteVersion(_ version: String, kind: String) async throws { _ = try await object("/api/hermes/runtime-versions/\(kind)/\(version.urlEncoded)", method: "DELETE") }
     func restartVersionedWebUI() async throws { _ = try await object("/api/hermes/runtime-versions/restart-webui", method: "POST") }
     func themeSettings() async throws -> ThemeSettings { ThemeSettings(try await object("/api/theme")) }
-    func saveTheme(fontSize: Double, textColor: String?, accentColor: String?) async throws -> ThemeSettings { ThemeSettings(try await object("/api/theme", method: "PUT", body: ["fontSize": fontSize, "textColor": textColor ?? NSNull(), "accentColor": accentColor ?? NSNull()])) }
+    func saveTheme(fontSize: Double, textColor: String?, accentColor: String?) async throws -> ThemeSettings {
+        let body: JSON = [
+            "fontSize": fontSize,
+            "textColor": textColor ?? NSNull(),
+            "accentColor": accentColor ?? NSNull()
+        ]
+        return ThemeSettings(try await object("/api/theme", method: "PUT", body: body))
+    }
     func uploadThemeBackground(data: Data, name: String, mime: String) async throws { _ = try await multipart("/api/theme/background", data: data, name: name, mime: mime, field: "background", profile: nil) }
     func deleteThemeBackground() async throws { _ = try await object("/api/theme/background", method: "DELETE") }
     func kanbanStats(board: String) async throws -> JSON { try await object("/api/hermes/kanban/stats?board=\(board.urlEncoded)").object("stats") }
