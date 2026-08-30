@@ -2,6 +2,26 @@ import XCTest
 @testable import HermesStudio
 
 final class HermesStudioTests: XCTestCase {
+    func testJourneyGraphUsesCanonicalGraphEnvelope() {
+        let graph = JourneyGraph(["profile": "main", "graph": ["nodes": [["id": "skill:a", "label": "Research", "kind": "skill", "useCount": 4]], "edges": [["source": "skill:a", "target": "memory:b"]], "clusters": []]])
+        XCTAssertEqual(graph.profile, "main")
+        XCTAssertEqual(graph.nodes.first?.useCount, 4)
+        XCTAssertEqual(graph.edges.first?.target, "memory:b")
+    }
+
+    func testSkillUsageParsesStudioSummary() {
+        let usage = SkillUsageStats(["period_days": 30, "summary": ["total_skill_loads": 8, "total_skill_edits": 2, "total_skill_actions": 10, "distinct_skills_used": 3], "top_skills": [["skill": "research", "view_count": 7, "manage_count": 1, "total_count": 8, "percentage": 80]], "by_day": []])
+        XCTAssertEqual(usage.days, 30)
+        XCTAssertEqual(usage.totalActions, 10)
+        XCTAssertEqual(usage.top.first?.id, "research")
+    }
+
+    func testWebhookEndpointUsesCanonicalSnakeCaseFields() {
+        let endpoint = WebhookEndpoint(["id": "hook-1", "name": "Ops", "url": "https://example.test/hook", "event_types": ["chat.run.completed"], "profiles": ["main"], "enabled": true, "include_content": true, "include_user_content": false, "allow_private_network": false, "max_retries": 3, "runtime": ["state": "idle"]])
+        XCTAssertTrue(endpoint.enabled)
+        XCTAssertEqual(endpoint.events, ["chat.run.completed"])
+        XCTAssertEqual(endpoint.runtime.string("state"), "idle")
+    }
     func testSocketUsageSupportsStudioContextFields() {
         let packet = #"42/chat-run,["run.completed",{"contextTokens":24000,"contextWindow":128000}]"#
         let event = ChatSocket.event(packet, namespace: "/chat-run")

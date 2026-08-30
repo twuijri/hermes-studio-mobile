@@ -8,6 +8,9 @@ struct KanbanView: View {
     @State private var loading = true
     @State private var creating = false
     @State private var selectedTask: KanbanTask?
+    @State private var stats: JSON = [:]
+    @State private var diagnostics: [JSON] = []
+    @State private var showingOperations = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,11 +22,13 @@ struct KanbanView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { Task { await loadTasks() } } label: { Image(systemName: "arrow.clockwise") }
+                Button { showingOperations = true } label: { Image(systemName: "gauge.with.dots.needle.50percent") }
                 Button { creating = true } label: { Image(systemName: "plus") }
             }
         }
         .sheet(isPresented: $creating) { TaskEditorView(board: selectedBoard) { await loadTasks() } }
         .sheet(item: $selectedTask) { task in TaskDetailView(task: task, board: selectedBoard) { await loadTasks() } }
+        .sheet(isPresented: $showingOperations) { NavigationStack { List { Section("Statistics") { LabeledContent("Total", value: "\(stats.int("total"))"); ForEach(stats.object("by_status").keys.sorted(), id: \.self) { key in LabeledContent(key.capitalized, value: "\(stats.object("by_status").int(key))") } }; Section("Operations") { Button("Dispatch ready tasks") { Task { await dispatch(false) } }; Button("Preview dispatch") { Task { await dispatch(true) } } }; Section("Diagnostics") { ForEach(diagnostics.indices, id: \.self) { index in let row = diagnostics[index]; VStack(alignment: .leading) { Text(row.string("message", "title", "kind")).font(.headline); Text(row.string("detail", "severity", "task_id")).font(.caption).foregroundStyle(.secondary) } } } }.navigationTitle("Board health").toolbar { Button("Done") { showingOperations = false } }.task { await loadOperations() } } }
         .task { await load() }
         .onChange(of: selectedBoard) { _, _ in Task { await loadTasks() } }
     }
@@ -58,6 +63,8 @@ struct KanbanView: View {
     private func load() async { loading = true; do { boards = try await store.api.boards(); if !boards.contains(where: { $0.id == selectedBoard }) { selectedBoard = boards.first?.id ?? "default" }; await loadTasks() } catch { store.errorMessage = error.localizedDescription }; loading = false }
     private func loadTasks() async { do { tasks = try await store.api.kanbanTasks(board: selectedBoard) } catch { store.errorMessage = error.localizedDescription } }
     private func move(ids: [String], to status: KanbanStatus) async { let old = tasks; for index in tasks.indices where ids.contains(tasks[index].id) { tasks[index].status = status.rawValue }; do { try await store.api.moveTasks(board: selectedBoard, ids: ids, status: status.rawValue) } catch { tasks = old; store.errorMessage = error.localizedDescription } }
+    private func loadOperations() async { stats = (try? await store.api.kanbanStats(board: selectedBoard)) ?? [:]; diagnostics = (try? await store.api.kanbanDiagnostics(board: selectedBoard)) ?? [] }
+    private func dispatch(_ dryRun: Bool) async { do { try await store.api.dispatchKanban(board: selectedBoard, dryRun: dryRun); store.notify(dryRun ? String(localized: "Dispatch preview complete") : String(localized: "Tasks dispatched")); await loadTasks(); await loadOperations() } catch { store.errorMessage = error.localizedDescription } }
 }
 
 private struct KanbanColumn: View {
@@ -114,7 +121,12 @@ private struct TaskDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let task: KanbanTask; let board: String; let onChange: () async -> Void
     @State private var comment = ""; @State private var assignee = ""
+    @State private var reason = ""; @State private var summary = ""; @State private var log = ""; @State private var attachments: [JSON] = []
     var body: some View {
-        NavigationStack { Form { Section { Text(task.title).font(.title3.bold()); if !task.description.isEmpty { Text(task.description) } } header: { Text("Task") }; Section("Status") { Picker("Status", selection: Binding(get: { task.status }, set: { value in Task { try? await store.api.moveTasks(board: board, ids: [task.id], status: value); await onChange(); dismiss() } })) { ForEach(KanbanStatus.allCases) { Text($0.title).tag($0.rawValue) } } }; Section("Assignee") { Picker("Agent", selection: $assignee) { Text("Unassigned").tag(""); ForEach(store.profiles) { Text($0.name).tag($0.name) } }.onChange(of: assignee) { _, value in Task { try? await store.api.assignTask(board: board, id: task.id, profile: value.nilIfEmpty); await onChange() } } }; Section("Comment") { TextField("Add a comment…", text: $comment, axis: .vertical); Button("Post comment") { Task { try? await store.api.commentTask(board: board, id: task.id, comment: comment); comment = ""; await onChange() } }.disabled(comment.isEmpty) } }.navigationTitle("Task details").navigationBarTitleDisplayMode(.inline).toolbar { Button("Done") { dismiss() } }.onAppear { assignee = task.assignee ?? "" } }
+        NavigationStack { Form { Section { Text(task.title).font(.title3.bold()); if !task.description.isEmpty { Text(task.description) } } header: { Text("Task") }; Section("Status") { Picker("Status", selection: Binding(get: { task.status }, set: { value in Task { try? await store.api.moveTasks(board: board, ids: [task.id], status: value); await onChange(); dismiss() } })) { ForEach(KanbanStatus.allCases) { Text($0.title).tag($0.rawValue) } }; TextField("Reason or completion summary", text: $reason, axis: .vertical); HStack { Button("Block") { Task { await block() } }.disabled(reason.isEmpty); Button("Unblock") { Task { await unblock() } }; Button("Complete") { Task { await complete() } } } }; Section("Assignee") { Picker("Agent", selection: $assignee) { Text("Unassigned").tag(""); ForEach(store.profiles) { Text($0.name).tag($0.name) } }.onChange(of: assignee) { _, value in Task { if let profile = value.nilIfEmpty { try? await store.api.reassignKanban(board: board, id: task.id, profile: profile) } else { try? await store.api.assignTask(board: board, id: task.id, profile: nil) }; await onChange() } } }; Section("Comment") { TextField("Add a comment…", text: $comment, axis: .vertical); Button("Post comment") { Task { try? await store.api.commentTask(board: board, id: task.id, comment: comment); comment = ""; await onChange() } }.disabled(comment.isEmpty) }; Section("Attachments") { ForEach(attachments.indices, id: \.self) { i in let row = attachments[i]; if let link = store.api.kanbanAttachmentURL(board: board, taskID: task.id, attachmentID: row.int("id")) { Link(destination: link) { LabeledContent(row.string("filename"), value: ByteCountFormatter.string(fromByteCount: Int64(row.int("size")), countStyle: .file)) } } else { Text(row.string("filename")) } } }; if !log.isEmpty { Section("Worker log") { Text(log).font(.caption.monospaced()).textSelection(.enabled) } } }.navigationTitle("Task details").navigationBarTitleDisplayMode(.inline).toolbar { Button("Done") { dismiss() } }.onAppear { assignee = task.assignee ?? "" }.task { await loadDetails() } }
     }
+    private func loadDetails() async { if let result = try? await store.api.kanbanLog(board: board, id: task.id) { log = result.string("content") }; attachments = (try? await store.api.kanbanAttachments(board: board, id: task.id)) ?? [] }
+    private func block() async { do { try await store.api.blockKanban(board: board, id: task.id, reason: reason); await onChange(); dismiss() } catch { store.errorMessage = error.localizedDescription } }
+    private func unblock() async { do { try await store.api.unblockKanban(board: board, ids: [task.id]); await onChange(); dismiss() } catch { store.errorMessage = error.localizedDescription } }
+    private func complete() async { do { try await store.api.completeKanban(board: board, ids: [task.id], summary: reason); await onChange(); dismiss() } catch { store.errorMessage = error.localizedDescription } }
 }

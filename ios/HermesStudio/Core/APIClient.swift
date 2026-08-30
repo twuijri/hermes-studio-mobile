@@ -360,6 +360,35 @@ final class APIClient: @unchecked Sendable {
         _ = try await object("/api/hermes/kanban/\(id.urlEncoded)/assign?board=\(board.urlEncoded)", method: "POST", body: body)
     }
     func commentTask(board: String, id: String, comment: String) async throws { _ = try await object("/api/hermes/kanban/\(id.urlEncoded)/comments?board=\(board.urlEncoded)", method: "POST", body: ["body": comment]) }
+    func journey() async throws -> JourneyGraph { JourneyGraph(try await object("/api/hermes/journey")) }
+    func skillUsage(days: Int) async throws -> SkillUsageStats { SkillUsageStats(try await object("/api/hermes/skills/usage/stats?days=\(days)")) }
+    func webhookEndpoints() async throws -> [WebhookEndpoint] { try await array("/api/studio/webhooks/endpoints", keys: ["endpoints"]).map(WebhookEndpoint.init) }
+    func saveWebhook(_ item: WebhookEndpoint?, name: String, url: String, secret: String, events: [String], profiles: [String], enabled: Bool, includeContent: Bool, includeUserContent: Bool, privateNetwork: Bool, retries: Int) async throws { var body: JSON = ["name": name, "url": url, "event_types": events, "profiles": profiles, "enabled": enabled, "include_content": includeContent, "include_user_content": includeUserContent, "allow_private_network": privateNetwork, "max_retries": retries]; if !secret.isEmpty { body["secret"] = secret }; _ = try await object(item.map { "/api/studio/webhooks/endpoints/\($0.id.urlEncoded)" } ?? "/api/studio/webhooks/endpoints", method: item == nil ? "POST" : "PATCH", body: body) }
+    func deleteWebhook(_ id: String) async throws { _ = try await object("/api/studio/webhooks/endpoints/\(id.urlEncoded)", method: "DELETE") }
+    func testWebhook(_ id: String) async throws -> JSON { try await object("/api/studio/webhooks/endpoints/\(id.urlEncoded)/test", method: "POST") }
+    func localWebhookTarget() async throws -> JSON { try await object("/api/studio/webhooks/local-test-target") }
+    func localWebhookEvents() async throws -> [JSON] { try await array("/api/studio/webhooks/local-test-events", keys: ["events"]) }
+    func clearLocalWebhookEvents() async throws { _ = try await object("/api/studio/webhooks/local-test-events", method: "DELETE") }
+    func runtimeVersions(remote: Bool = true) async throws -> RuntimeVersionStatus { RuntimeVersionStatus(try await object("/api/hermes/runtime-versions?remote=\(remote ? "true" : "false")")) }
+    func runtimeJobs() async throws -> [JSON] { try await array("/api/hermes/runtime-versions/jobs", keys: ["jobs"]) }
+    func downloadVersion(_ version: String, kind: String, source: String) async throws { _ = try await object("/api/hermes/runtime-versions/\(kind)/download", method: "POST", body: ["version": version, "source": source]) }
+    func activateVersion(_ version: String, kind: String) async throws { _ = try await object("/api/hermes/runtime-versions/active-\(kind == "runtime" ? "runtime" : "webui")", method: "POST", body: ["version": version]) }
+    func deleteVersion(_ version: String, kind: String) async throws { _ = try await object("/api/hermes/runtime-versions/\(kind)/\(version.urlEncoded)", method: "DELETE") }
+    func restartVersionedWebUI() async throws { _ = try await object("/api/hermes/runtime-versions/restart-webui", method: "POST") }
+    func themeSettings() async throws -> ThemeSettings { ThemeSettings(try await object("/api/theme")) }
+    func saveTheme(fontSize: Double, textColor: String?, accentColor: String?) async throws -> ThemeSettings { ThemeSettings(try await object("/api/theme", method: "PUT", body: ["fontSize": fontSize, "textColor": textColor ?? NSNull(), "accentColor": accentColor ?? NSNull()])) }
+    func uploadThemeBackground(data: Data, name: String, mime: String) async throws { _ = try await multipart("/api/theme/background", data: data, name: name, mime: mime, field: "background", profile: nil) }
+    func deleteThemeBackground() async throws { _ = try await object("/api/theme/background", method: "DELETE") }
+    func kanbanStats(board: String) async throws -> JSON { try await object("/api/hermes/kanban/stats?board=\(board.urlEncoded)").object("stats") }
+    func kanbanDiagnostics(board: String, task: String? = nil) async throws -> [JSON] { try await array("/api/hermes/kanban/diagnostics?board=\(board.urlEncoded)\(task.map { "&task=\($0.urlEncoded)" } ?? "")", keys: ["diagnostics"]) }
+    func dispatchKanban(board: String, dryRun: Bool = false) async throws { _ = try await object("/api/hermes/kanban/dispatch?board=\(board.urlEncoded)", method: "POST", body: ["dryRun": dryRun]) }
+    func blockKanban(board: String, id: String, reason: String) async throws { _ = try await object("/api/hermes/kanban/\(id.urlEncoded)/block?board=\(board.urlEncoded)", method: "POST", body: ["reason": reason]) }
+    func unblockKanban(board: String, ids: [String]) async throws { _ = try await object("/api/hermes/kanban/unblock?board=\(board.urlEncoded)", method: "POST", body: ["task_ids": ids]) }
+    func completeKanban(board: String, ids: [String], summary: String) async throws { _ = try await object("/api/hermes/kanban/complete?board=\(board.urlEncoded)", method: "POST", body: ["task_ids": ids, "summary": summary]) }
+    func reassignKanban(board: String, id: String, profile: String, reclaim: Bool = true) async throws { _ = try await object("/api/hermes/kanban/\(id.urlEncoded)/reassign?board=\(board.urlEncoded)", method: "POST", body: ["profile": profile, "reclaim": reclaim]) }
+    func kanbanLog(board: String, id: String) async throws -> JSON { try await object("/api/hermes/kanban/\(id.urlEncoded)/log?board=\(board.urlEncoded)&tail=400") }
+    func kanbanAttachments(board: String, id: String) async throws -> [JSON] { try await array("/api/hermes/kanban/\(id.urlEncoded)/attachments?board=\(board.urlEncoded)", keys: ["attachments"]) }
+    func kanbanAttachmentURL(board: String, taskID: String, attachmentID: Int) -> URL? { var components = URLComponents(string: baseURL + "/api/hermes/kanban/\(taskID.urlEncoded)/attachments/\(attachmentID)?board=\(board.urlEncoded)"); if !token.isEmpty { components?.queryItems = (components?.queryItems ?? []) + [URLQueryItem(name: "token", value: token)] }; return components?.url }
 
     func cronJobs(profile: String) async throws -> [CronJob] {
         try await array("/api/hermes/jobs?include_disabled=true", keys: ["jobs"], profile: profile).map(CronJob.init)
