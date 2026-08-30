@@ -224,6 +224,7 @@ class HermesApiContractTest {
     fun `device pairing and peer disconnect use Studio controls`() {
         enqueue("""{"link":"https://studio/#/hermes/devices?pairing_code=123"}""")
         assertEquals("https://studio/#/hermes/devices?pairing_code=123", api.devicePairingLink())
+        assertEquals("/api/devices/pairing-link", server.takeRequest().path)
         enqueue("""{"devices":[]}""")
         api.manualDeviceRequest("https://remote.example/#/hermes/devices?pairing_code=456")
         val manual = server.takeRequest()
