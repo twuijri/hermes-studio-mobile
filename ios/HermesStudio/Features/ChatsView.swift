@@ -13,6 +13,7 @@ struct ChatsView: View {
     @State private var loading = true
     @State private var editSession: SessionSummary?
     @State private var newTitle = ""
+    @State private var creatingSession = false
 
     var body: some View {
         Group {
@@ -85,17 +86,12 @@ struct ChatsView: View {
                 Button { showArchived.toggle() } label: { Image(systemName: showArchived ? "tray.full.fill" : "archivebox") }.accessibilityLabel(showArchived ? "Show active" : "Show archived")
                 Button { managingCategories = true } label: { Image(systemName: "folder.badge.gearshape") }.accessibilityLabel("Manage categories")
                 Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh")
-                Menu {
-                    Section("Agent") {
-                        ForEach(["hermes", "ekko-agent", "claude-code", "codex", "pi"], id: \.self) { agent in
-                            NavigationLink { ConversationView(session: newSession(agent: agent)) } label: { Label(AgentIdentity.displayName(for: agent), systemImage: agentSymbol(agent)) }
-                        }
-                    }
-                } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("New conversation")
+                Button { creatingSession = true } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("New conversation")
             }
         }
         .task(id: "\(profileFilter)|\(search)|\(showArchived)") { if !search.isEmpty { try? await Task.sleep(for: .milliseconds(300)) }; guard !Task.isCancelled else { return }; await load() }
         .sheet(isPresented: $managingCategories) { NavigationStack { SessionCategoriesView(categories: $categories) }.environmentObject(store) }
+        .sheet(isPresented: $creatingSession) { NewCodingSessionView(categories: categories).environmentObject(store) }
         .alert("Rename conversation", isPresented: Binding(get: { editSession != nil }, set: { if !$0 { editSession = nil } })) {
             TextField("Title", text: $newTitle)
             Button("Save") { guard let editSession else { return }; Task { try? await store.api.renameSession(editSession.id, title: newTitle); await load() } }
@@ -140,6 +136,16 @@ struct ChatsView: View {
         } catch { store.errorMessage = error.localizedDescription }
     }
     private func assign(_ session: SessionSummary, category: Int?) async { do { try await store.api.setSessionCategory(session.id, categoryID: category); await load() } catch { store.errorMessage = error.localizedDescription } }
+}
+
+private struct NewCodingSessionView: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    let categories: [SessionCategory]
+    @State private var agent = "hermes"; @State private var profile = ""; @State private var mode = "scoped"; @State private var workspace = ""; @State private var categoryID = 0; @State private var apiMode = "codex_responses"; @State private var baseURL = ""; @State private var apiKey = ""; @State private var pushEnabled = true; @State private var readySession: SessionSummary?
+    private var isCoding: Bool { AgentIdentity.canonicalID(agent) != "hermes" }
+    var body: some View { NavigationStack { Form { Section("Agent") { Picker("Runtime", selection: $agent) { ForEach(["hermes", "ekko-agent", "claude-code", "codex", "pi"], id: \.self) { Text(AgentIdentity.displayName(for: $0)).tag($0) } }; Picker("Profile", selection: $profile) { ForEach(store.profiles) { Text($0.name).tag($0.name) } } }; if isCoding { Section("Launch mode") { Picker("Mode", selection: $mode) { Text("Scoped").tag("scoped"); Text("Global").tag("global") }.pickerStyle(.segmented); Text(mode == "global" ? "Use the agent's global configuration." : "Use isolated Studio provider configuration.").font(.caption).foregroundStyle(.secondary) } }; Section("Session") { TextField("Workspace path", text: $workspace).textInputAutocapitalization(.never); Picker("Category", selection: $categoryID) { Text("No category").tag(0); ForEach(categories) { Text($0.name).tag($0.id) } }; Toggle("Push completion notification", isOn: $pushEnabled) }; if isCoding && mode == "scoped" { Section("Provider API") { Picker("API mode", selection: $apiMode) { Text("Responses").tag("codex_responses"); Text("Chat Completions").tag("chat_completions"); Text("Anthropic Messages").tag("anthropic_messages") }; TextField("Base URL", text: $baseURL).textInputAutocapitalization(.never).keyboardType(.URL); SecureField("API key", text: $apiKey) } }; Section { Button("Start conversation") { readySession = makeSession() }.frame(maxWidth: .infinity) } }.navigationTitle("New conversation").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }.onAppear { if profile.isEmpty { profile = store.selectedProfile } }.navigationDestination(item: $readySession) { session in ConversationView(session: session) } } }
+    private func makeSession() -> SessionSummary { var json: JSON = ["id": UUID().uuidString, "title": String(localized: "New conversation"), "profile": profile.nilIfEmpty ?? store.selectedProfile, "agent": agent, "source": isCoding ? "coding_agent" : "cli", "agent_mode": mode, "workspace": workspace, "api_mode": apiMode, "base_url": baseURL, "api_key": apiKey, "push_enabled": pushEnabled]; if categoryID > 0 { json["category_id"] = categoryID }; return SessionSummary(json, profile: profile) }
 }
 
 private struct SessionCategoriesView: View {

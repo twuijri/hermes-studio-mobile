@@ -480,3 +480,15 @@
 "Deliver Studio chat events" = "أرسل أحداث محادثات الاستديو";
 "Download, activate and restart Studio" = "نزّل الإصدارات وفعّلها وأعد تشغيل الاستديو";
 "Sync palette, text and background" = "زامن الألوان والنص والخلفية";
+"Queued message" = "رسالة في الانتظار";
+"Subagent" = "وكيل فرعي";
+"Launch mode" = "نمط التشغيل";
+"Scoped" = "معزول";
+"Global" = "عام";
+"Workspace path" = "مسار مساحة العمل";
+"Push completion notification" = "إشعار عند اكتمال المهمة";
+"Provider API" = "واجهة مزود الخدمة";
+"API mode" = "نمط الواجهة البرمجية";
+"Base URL" = "عنوان الخدمة الأساسي";
+"API key" = "مفتاح الواجهة البرمجية";
+"Start conversation" = "بدء المحادثة";

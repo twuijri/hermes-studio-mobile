@@ -6,9 +6,9 @@ private struct ConversationPendingAction: Identifiable {
     let payload: JSON
     var id: String { "\(kind)-\(actionID)" }
     var isApproval: Bool { kind.contains("approval") }
-    var actionID: String { payload.string("approval_id", "approvalId", "clarification_id", "clarificationId", "id") }
+    var actionID: String { payload.string("approval_id", "approvalId", "clarify_id", "clarification_id", "clarificationId", "id") }
     var prompt: String { payload.string("prompt", "question", "message", "description", "tool_name").nilIfEmpty ?? String(localized: "The agent needs your response before it can continue.") }
-    var choices: [String] { let values = payload.strings("choices"); return values.isEmpty ? ["approve", "approve_session"] : values }
+    var choices: [String] { let values = payload.strings("choices"); return values.isEmpty ? ["once", "session", "always"] : values }
 }
 
 struct ConversationView: View {
@@ -39,6 +39,8 @@ struct ConversationView: View {
     @State private var composerExpanded = false
     @State private var pendingAction: ConversationPendingAction?
     @State private var clarificationAnswer = ""
+    @State private var queuedRuns: [QueuedRun] = []
+    @State private var queueInsertionID = ""
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -74,6 +76,7 @@ struct ConversationView: View {
                 .onChange(of: lines) { _, _ in withAnimation(.easeOut(duration: 0.22)) { reader.scrollTo("bottom", anchor: .bottom) } }
                 .task { await reload(); try? await Task.sleep(for: .milliseconds(120)); reader.scrollTo("bottom", anchor: .bottom) }
             }
+            if !queuedRuns.isEmpty { queuedPanel }
             Divider(); composer
         }
         .background(Color(uiColor: .systemBackground))
@@ -113,7 +116,7 @@ struct ConversationView: View {
                     if action.isApproval {
                         Section("Choose an action") {
                             ForEach(action.choices, id: \.self) { choice in Button(choice) { socket.respondToApproval(sessionID: session.id, approvalID: action.actionID, choice: choice); pendingAction = nil } }
-                            Button("Reject", role: .destructive) { socket.respondToApproval(sessionID: session.id, approvalID: action.actionID, choice: "reject"); pendingAction = nil }
+                            Button("Reject", role: .destructive) { socket.respondToApproval(sessionID: session.id, approvalID: action.actionID, choice: "deny"); pendingAction = nil }
                         }
                     } else {
                         Section("Your answer") { TextField("Type clarification", text: $clarificationAnswer, axis: .vertical).lineLimit(2...6) }
@@ -131,7 +134,7 @@ struct ConversationView: View {
         .onChange(of: scenePhase) { _, phase in
             // Studio keeps running after the app is backgrounded. Pull the
             // persisted history as soon as the conversation becomes visible.
-            if phase == .active { Task { await reload() } }
+            if phase == .active { socket.resumeApp(sessionID: session.id); Task { await reload() } }
         }
         .onDisappear { socket.close(); if recorder.isRecording { _ = recorder.stop() } }
     }
@@ -184,6 +187,10 @@ struct ConversationView: View {
         }
     }
 
+    private var queuedPanel: some View {
+        ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) { ForEach(queuedRuns) { item in HStack(spacing: 7) { Image(systemName: queueInsertionID == item.id ? "arrow.down.to.line.compact" : "clock"); Text(item.text.nilIfEmpty ?? String(localized: "Queued message")).lineLimit(1); Button { socket.insertQueued(sessionID: session.id, queueID: item.id); queueInsertionID = item.id } label: { Image(systemName: "arrow.up.to.line.compact") }; Button { socket.cancelQueued(sessionID: session.id, queueID: item.id); queuedRuns.removeAll { $0.id == item.id } } label: { Image(systemName: "xmark.circle.fill") } }.font(.caption).padding(8).background(.thinMaterial, in: Capsule()) } }.padding(.horizontal, 12) }.padding(.vertical, 5)
+    }
+
     private var expandedComposer: some View {
         VStack(spacing: 9) {
             if let replyingTo {
@@ -228,9 +235,9 @@ struct ConversationView: View {
                     .foregroundStyle(.secondary)
                 }
                 Button {
-                    if canSend || sending { send() } else { Task { await voice() } }
+                    if sending && canSend { queueCurrentMessage() } else if canSend || sending { send() } else { Task { await voice() } }
                 } label: {
-                    Image(systemName: sending || recorder.isRecording ? "stop.fill" : canSend ? "arrow.up" : "mic.fill")
+                    Image(systemName: sending && canSend ? "text.line.last.and.arrowtriangle.forward" : sending || recorder.isRecording ? "stop.fill" : canSend ? "arrow.up" : "mic.fill")
                         .font(.headline)
                         .foregroundStyle(canSend || sending ? Color.white : recorder.isRecording ? Color.red : Color.primary)
                         .frame(width: 40, height: 40)
@@ -287,9 +294,13 @@ struct ConversationView: View {
         let replyID = lines.last!.id; sending = true
         Task {
             var gotAnything = false
-            let stream = socket.run(baseURL: store.baseURL, token: store.token, profile: session.profile, sessionID: session.id, input: text, attachments: files, reasoningEffort: store.reasoningEffort.nilIfEmpty, model: selectedModel.nilIfEmpty, provider: selectedProvider.nilIfEmpty, agentID: session.agentID, source: session.source)
+            var activeReplyID = replyID
+            let stream = socket.run(baseURL: store.baseURL, token: store.token, profile: session.profile, sessionID: session.id, input: text, attachments: files, reasoningEffort: store.reasoningEffort.nilIfEmpty, model: selectedModel.nilIfEmpty, provider: selectedProvider.nilIfEmpty, session: session)
             for await event in stream {
-                guard let index = lines.firstIndex(where: { $0.id == replyID }) else { continue }
+                if case .started = event, let prior = lines.firstIndex(where: { $0.id == activeReplyID }), lines[prior].finishedAt != nil {
+                    lines.append(ChatLine(text: "", fromUser: false, sender: session.profile, isStreaming: true)); activeReplyID = lines.last!.id
+                }
+                guard let index = lines.firstIndex(where: { $0.id == activeReplyID }) else { continue }
                 switch event {
                 case let .started(date): lines[index].startedAt = date; gotAnything = true
                 case let .text(delta): lines[index].text += delta; gotAnything = true
@@ -301,17 +312,28 @@ struct ConversationView: View {
                     let action = ConversationPendingAction(kind: kind, payload: payload)
                     pendingAction = action
                     lines[index].text += action.isApproval ? String(localized: "Approval is waiting for your response.") : String(localized: "Clarification is waiting for your response.")
+                case let .actionResolved(id): if pendingAction?.actionID == id || id.isEmpty { pendingAction = nil }
+                case let .queued(items): queuedRuns = items
+                case let .queueInsertion(id, phase): queueInsertionID = phase == "cancelled" ? "" : id
+                case let .subagent(id, event, title, detail): updateTool(index: index, id: "subagent-\(id)", name: title, detail: detail.nilIfEmpty ?? event, status: event == "subagent.complete" ? .done : .running, duration: nil); gotAnything = true
                 case let .failed(message, retryable):
                     if retryable && !gotAnything { await restFallback(index: index, text: text, files: files) }
                     else { lines[index].text = lines[index].text.nilIfEmpty ?? message; lines[index].isError = true; lines[index].isStreaming = false }
                 }
             }
-            if let index = lines.firstIndex(where: { $0.id == replyID }) { lines[index].isStreaming = false; lines[index].finishedAt = .now }
+            if let index = lines.firstIndex(where: { $0.id == activeReplyID }) { lines[index].isStreaming = false; lines[index].finishedAt = .now }
             if wantsVoiceReply, let reply = lines.first(where: { $0.id == replyID })?.text.nilIfEmpty {
                 await speak(reply)
             }
             sending = false; Preferences.setSession(session.id, profile: session.profile)
         }
+    }
+
+    private func queueCurrentMessage() {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty || !attachments.isEmpty else { return }
+        if let replyingTo { let quote = replyingTo.text.split(separator: "\n").prefix(8).map { "> \($0)" }.joined(separator: "\n"); text = [quote, text].filter { !$0.isEmpty }.joined(separator: "\n\n"); self.replyingTo = nil }
+        let files = attachments; input = ""; attachments = []; inputFocused = false
+        socket.enqueue(profile: session.profile, sessionID: session.id, input: text, attachments: files, reasoningEffort: store.reasoningEffort.nilIfEmpty, model: selectedModel.nilIfEmpty, provider: selectedProvider.nilIfEmpty, session: session)
     }
 
     private func restFallback(index: Int, text: String, files: [Upload]) async {

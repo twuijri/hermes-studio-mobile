@@ -2,6 +2,31 @@ import XCTest
 @testable import HermesStudio
 
 final class HermesStudioTests: XCTestCase {
+    func testClarificationUsesCanonicalPayloadKeys() {
+        let payload = ChatSocket.clarificationPayload(sessionID: "s1", clarificationID: "c1", answer: "نعم")
+        XCTAssertEqual(payload.string("clarify_id"), "c1")
+        XCTAssertEqual(payload.string("response"), "نعم")
+        XCTAssertNil(payload["clarification_id"])
+        XCTAssertNil(payload["answer"])
+    }
+
+    func testCodingAgentRunPreservesGlobalModeAndSessionSettings() {
+        let session = SessionSummary(["id": "s1", "profile": "main", "agent": "codex", "source": "coding_agent", "agent_mode": "global", "workspace": "/work", "category_id": 4, "api_mode": "codex_responses", "base_url": "https://ignored.example", "api_key": "ignored", "push_enabled": false])
+        let payload = ChatSocket.runPayload(profile: "main", sessionID: "s1", input: "hello", attachments: [], reasoningEffort: nil, model: nil, provider: nil, session: session)
+        XCTAssertEqual(payload.string("mode"), "global")
+        XCTAssertEqual(payload.string("workspace"), "/work")
+        XCTAssertEqual(payload.int("category_id"), 4)
+        XCTAssertFalse(payload.bool("push_enabled", default: true))
+        XCTAssertNil(payload["api_key"])
+    }
+
+    func testAppResumeRestoresCachedMessagePage() {
+        let sessionID = "resume-\(UUID().uuidString)"
+        _ = ChatSocket.restoredResume(["id": "cache-1", "messages": [["role": "assistant", "content": "cached"]]], sessionID: sessionID)
+        let restored = ChatSocket.restoredResume(["id": "cache-1", "messagesCached": true, "isWorking": false], sessionID: sessionID)
+        XCTAssertEqual(restored.objects("messages").first?.string("content"), "cached")
+        XCTAssertEqual(ChatSocket.cachedResumeID(sessionID), "cache-1")
+    }
     func testJourneyGraphUsesCanonicalGraphEnvelope() {
         let graph = JourneyGraph(["profile": "main", "graph": ["nodes": [["id": "skill:a", "label": "Research", "kind": "skill", "useCount": 4]], "edges": [["source": "skill:a", "target": "memory:b"]], "clusters": []]])
         XCTAssertEqual(graph.profile, "main")

@@ -8,7 +8,17 @@ enum LiveRunEvent {
     case usage(contextTokens: Int, contextWindow: Int?)
     case completed(output: String, reasoning: String)
     case requiresAction(kind: String, payload: JSON)
+    case actionResolved(id: String)
+    case queued([QueuedRun])
+    case queueInsertion(id: String, phase: String)
+    case subagent(id: String, event: String, title: String, detail: String)
     case failed(String, retryable: Bool)
+}
+
+struct QueuedRun: Identifiable, Hashable {
+    let id: String
+    let text: String
+    init(_ json: JSON) { id = json.string("id", "queue_id"); text = json.string("content", "input", "text") }
 }
 
 enum LiveRoomEvent {
@@ -99,31 +109,27 @@ final class ChatSocket: @unchecked Sendable {
     private var connection: SocketIOConnection?
 
     func abort(sessionID: String) { connection?.emit("abort", payload: ["session_id": sessionID]) }
+    func resumeApp(sessionID: String) { connection?.emit("app.resume", payload: ["session_id": sessionID, "id": Self.cachedResumeID(sessionID)]) }
     func respondToApproval(sessionID: String, approvalID: String, choice: String) {
         connection?.emit("approval.respond", payload: ["session_id": sessionID, "approval_id": approvalID, "choice": choice])
     }
     func respondToClarification(sessionID: String, clarificationID: String, answer: String) {
-        connection?.emit("clarify.respond", payload: ["session_id": sessionID, "clarification_id": clarificationID, "answer": answer])
+        connection?.emit("clarify.respond", payload: Self.clarificationPayload(sessionID: sessionID, clarificationID: clarificationID, answer: answer))
+    }
+    static func clarificationPayload(sessionID: String, clarificationID: String, answer: String) -> JSON { ["session_id": sessionID, "clarify_id": clarificationID, "response": answer] }
+    func cancelQueued(sessionID: String, queueID: String) { connection?.emit("cancel_queued_run", payload: ["session_id": sessionID, "queue_id": queueID]) }
+    func insertQueued(sessionID: String, queueID: String) { connection?.emit("insert_queued_run", payload: ["session_id": sessionID, "queue_id": queueID]) }
+    func enqueue(profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?, session: SessionSummary) {
+        var payload = Self.runPayload(profile: profile, sessionID: sessionID, input: input, attachments: attachments, reasoningEffort: reasoningEffort, model: model, provider: provider, session: session)
+        payload["queue_id"] = UUID().uuidString
+        connection?.emit("run", payload: payload)
     }
     func close() { connection?.close(); connection = nil }
 
-    func run(baseURL: String, token: String, profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?, agentID: String = "hermes", source: String = "") -> AsyncStream<LiveRunEvent> {
+    func run(baseURL: String, token: String, profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?, session: SessionSummary) -> AsyncStream<LiveRunEvent> {
         close()
         return AsyncStream { continuation in
-            var payload: JSON = ["input": Self.content(input, attachments), "profile": profile, "session_id": sessionID]
-            if let reasoningEffort, !reasoningEffort.isEmpty { payload["reasoning_effort"] = reasoningEffort }
-            if let model, !model.isEmpty { payload["model"] = model }
-            if let provider, !provider.isEmpty { payload["provider"] = provider }
-            let canonicalAgent = AgentIdentity.canonicalID(agentID)
-            if source == "global_agent" {
-                payload["source"] = "global_agent"
-                payload["session_source"] = "global_agent"
-                payload["coding_agent_id"] = canonicalAgent
-            } else if canonicalAgent != "hermes" {
-                payload["source"] = "coding_agent"
-                payload["coding_agent_id"] = canonicalAgent
-                payload["mode"] = "scoped"
-            } else if !source.isEmpty { payload["source"] = source }
+            let payload = Self.runPayload(profile: profile, sessionID: sessionID, input: input, attachments: attachments, reasoningEffort: reasoningEffort, model: model, provider: provider, session: session)
             let live = SocketIOConnection(baseURL: baseURL, token: token, namespace: "/chat-run", profile: profile)
             self.connection = live
             var started = false
@@ -157,7 +163,7 @@ final class ChatSocket: @unchecked Sendable {
                 if packet == "__connected__" {
                     reconnectAttempt = 0
                     if submitted {
-                        live.emit("resume", payload: ["session_id": sessionID, "profile": profile])
+                        live.emit("app.resume", payload: ["session_id": sessionID, "id": Self.cachedResumeID(sessionID)])
                     } else {
                         submitted = true
                         live.emit("run", payload: payload)
@@ -176,11 +182,21 @@ final class ChatSocket: @unchecked Sendable {
                 }
                 guard let (event, json) = Self.event(packet, namespace: "/chat-run") else { return }
                 switch event {
-                case "resumed":
-                    if let usage = Self.usage(json) { continuation.yield(usage) }
-                    if json.bool("isWorking") {
+                case "resumed", "app.resumed":
+                    let restored = Self.restoredResume(json, sessionID: sessionID)
+                    if let usage = Self.usage(restored) { continuation.yield(usage) }
+                    continuation.yield(.queued(restored.objects("queueMessages").map(QueuedRun.init)))
+                    let insertion = restored.object("queueInsertion")
+                    if !insertion.isEmpty { continuation.yield(.queueInsertion(id: insertion.string("queue_id"), phase: insertion.string("phase"))) }
+                    for row in restored.objects("backgroundTasks") { continuation.yield(.subagent(id: row.string("delegation_id", "subagent_id", "id").nilIfEmpty ?? UUID().uuidString, event: row.string("event").nilIfEmpty ?? (row.string("status") == "completed" ? "subagent.complete" : "subagent.progress"), title: row.string("goal", "name", "summary").nilIfEmpty ?? String(localized: "Subagent"), detail: row.string("text", "summary", "status", "tool", "error"))) }
+                    for envelope in restored.objects("events") {
+                        let replayEvent = envelope.string("event"), replayData = envelope.object("data")
+                        if replayEvent == "approval.requested" || replayEvent == "clarify.requested" { continuation.yield(.requiresAction(kind: replayEvent, payload: replayData)) }
+                        else if replayEvent.hasPrefix("subagent.") || replayEvent == "delegation.updated" { continuation.yield(.subagent(id: replayData.string("delegation_id", "subagent_id", "id").nilIfEmpty ?? UUID().uuidString, event: replayEvent, title: replayData.string("goal", "name", "summary").nilIfEmpty ?? String(localized: "Subagent"), detail: replayData.string("text", "summary", "status", "tool", "error"))) }
+                    }
+                    if restored.bool("isWorking") {
                         started = true
-                    } else if let completion = Self.completion(fromResume: json) {
+                    } else if let completion = Self.completion(fromResume: restored) {
                         continuation.yield(.completed(output: completion.output, reasoning: completion.reasoning))
                         finish()
                     } else {
@@ -188,6 +204,11 @@ final class ChatSocket: @unchecked Sendable {
                         finish()
                     }
                 case "run.started": started = true; continuation.yield(.started(.now))
+                case "run.queued": continuation.yield(.queued(json.objects("queued_messages").map(QueuedRun.init)))
+                case "run.queue_insertion.updated": continuation.yield(.queueInsertion(id: json.string("queue_id"), phase: json.string("phase")))
+                case let value where value.hasPrefix("subagent.") || value == "delegation.updated" || value == "subagent.event":
+                    let nestedEvent = value == "subagent.event" ? json.string("event") : value
+                    continuation.yield(.subagent(id: json.string("delegation_id", "subagent_id", "id").nilIfEmpty ?? UUID().uuidString, event: nestedEvent, title: json.string("goal", "name", "summary").nilIfEmpty ?? String(localized: "Subagent"), detail: json.string("text", "summary", "status", "tool", "error")))
                 case "message.delta":
                     let delta = json.string("delta", "text"); if !delta.isEmpty { started = true; continuation.yield(.text(delta)) }
                 case "reasoning.delta", "thinking.delta":
@@ -201,15 +222,41 @@ final class ChatSocket: @unchecked Sendable {
                     continuation.yield(.tool(id: id.isEmpty ? "\(name)-\(UUID().uuidString)" : id, name: name, detail: detail, status: status, duration: json["duration_seconds"] == nil ? nil : json.double("duration_seconds")))
                 case "run.completed":
                     if let usage = Self.usage(json) { continuation.yield(usage) }
-                    continuation.yield(.completed(output: json.string("output"), reasoning: json.string("reasoning"))); finish()
+                    continuation.yield(.completed(output: json.string("output"), reasoning: json.string("reasoning")))
+                    if json.int("queue_remaining") == 0 && json.int("background_pending") == 0 { finish() }
                 case "approval.requested", "clarify.requested": continuation.yield(.requiresAction(kind: event, payload: json))
-                case "run.failed": continuation.yield(.failed(json.string("error", "message").nilIfEmpty ?? String(localized: "Run failed"), retryable: false)); finish()
+                case "approval.resolved", "clarify.resolved": continuation.yield(.actionResolved(id: json.string("approval_id", "clarify_id", "id")))
+                case "run.failed": continuation.yield(.failed(json.string("error", "message").nilIfEmpty ?? String(localized: "Run failed"), retryable: false)); if json.int("queue_remaining") == 0 && json.int("background_pending") == 0 { finish() }
                 default: break
                 }
             }
             live.connect(onPacket: handlePacket)
             continuation.onTermination = { [weak self] _ in retryTask.value?.cancel(); self?.close() }
         }
+    }
+
+    static func runPayload(profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?, session: SessionSummary) -> JSON {
+        var payload: JSON = ["input": content(input, attachments), "profile": profile, "session_id": sessionID, "push_enabled": session.pushEnabled]
+        if let reasoningEffort, !reasoningEffort.isEmpty { payload["reasoning_effort"] = reasoningEffort }
+        if let model, !model.isEmpty { payload["model"] = model }
+        if let provider, !provider.isEmpty { payload["provider"] = provider }
+        if !session.workspace.isEmpty { payload["workspace"] = session.workspace }
+        if let category = session.categoryID { payload["category_id"] = category }
+        let agent = AgentIdentity.canonicalID(session.agentID)
+        if session.source == "global_agent" { payload["source"] = "global_agent"; payload["session_source"] = "global_agent"; payload["coding_agent_id"] = agent }
+        else if agent != "hermes" { payload["source"] = "coding_agent"; payload["coding_agent_id"] = agent; payload["agent_id"] = agent; payload["mode"] = session.agentMode == "global" ? "global" : "scoped"; if session.agentMode != "global" { if !session.baseURL.isEmpty { payload["base_url"] = session.baseURL }; if !session.apiKey.isEmpty { payload["api_key"] = session.apiKey }; if !session.apiMode.isEmpty { payload["api_mode"] = session.apiMode } } }
+        else if !session.source.isEmpty { payload["source"] = session.source }
+        return payload
+    }
+
+    private static func cacheKey(_ sessionID: String) -> String { "studio.resume.\(sessionID)" }
+    static func cachedResumeID(_ sessionID: String) -> String { (UserDefaults.standard.dictionary(forKey: cacheKey(sessionID))?["id"] as? String) ?? "" }
+    static func restoredResume(_ json: JSON, sessionID: String) -> JSON {
+        var result = json
+        let key = cacheKey(sessionID)
+        if json.bool("messagesCached"), let cached = UserDefaults.standard.dictionary(forKey: key), let data = cached["messages"] as? Data, let rows = try? JSONSerialization.jsonObject(with: data) as? [JSON] { result["messages"] = rows }
+        if !json.objects("messages").isEmpty, let id = json.string("id").nilIfEmpty, let data = try? JSONSerialization.data(withJSONObject: json.objects("messages")) { UserDefaults.standard.set(["id": id, "messages": data], forKey: key) }
+        return result
     }
 
     private static func usage(_ json: JSON) -> LiveRunEvent? {

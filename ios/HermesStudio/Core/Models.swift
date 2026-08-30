@@ -118,6 +118,12 @@ struct SessionSummary: Identifiable, Hashable {
     var archived: Bool
     var preview: String
     var messageCount: Int
+    var agentMode: String
+    var workspace: String
+    var apiMode: String
+    var baseURL: String
+    var apiKey: String
+    var pushEnabled: Bool
 
     init(_ json: JSON, profile fallbackProfile: String = "") {
         id = json.string("id", "session_id", "sessionId")
@@ -133,6 +139,12 @@ struct SessionSummary: Identifiable, Hashable {
         archived = json.bool("is_archived") || json.bool("archived")
         preview = json.string("preview", "last_message", "lastMessage")
         messageCount = json["message_count"] == nil ? json.int("messageCount") : json.int("message_count")
+        agentMode = json.string("agent_mode", "agentMode", "codingAgentMode", "mode").nilIfEmpty ?? "scoped"
+        workspace = json.string("workspace")
+        apiMode = json.string("api_mode", "apiMode").nilIfEmpty ?? "codex_responses"
+        baseURL = json.string("base_url", "baseUrl")
+        apiKey = json.string("api_key", "apiKey")
+        pushEnabled = json["push_enabled"] == nil ? json.bool("pushEnabled", default: true) : json.bool("push_enabled", default: true)
     }
 
     var agentDisplayName: String { AgentIdentity.displayName(for: agentID) }
