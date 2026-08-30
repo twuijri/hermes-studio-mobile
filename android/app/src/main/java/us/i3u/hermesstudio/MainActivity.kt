@@ -402,6 +402,10 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
     var confirmDelete by remember { mutableStateOf<SessionSummary?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var newCategory by remember { mutableStateOf(false) }
+    var editCategory by remember { mutableStateOf<SessionCategory?>(null) }
+    var deleteCategory by remember { mutableStateOf<SessionCategory?>(null) }
+    var workspaceFor by remember { mutableStateOf<SessionSummary?>(null) }
+    var deleteVisible by remember { mutableStateOf(false) }
     val visibleSessions = remember(state.sessions, state.sessionSearchResults, query) {
         val clean = query.trim()
         if (clean.isBlank()) state.sessions else state.sessionSearchResults.orEmpty()
@@ -432,10 +436,10 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
             TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { viewModel.archiveSession(session); manage = null }) {
                 Text(stringResource(if (session.archived) R.string.session_unarchive else R.string.session_archive), Modifier.fillMaxWidth())
             }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { viewModel.exportSession(session); manage = null }) { Text(stringResource(R.string.session_export), Modifier.fillMaxWidth()) }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { workspaceFor = session; manage = null }) { Text(stringResource(R.string.session_workspace), Modifier.fillMaxWidth()) }
             state.sessionCategories.forEach { category ->
-                TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { viewModel.setSessionCategory(session, category.id); manage = null }) {
-                    Text(stringResource(R.string.session_move_category, category.name), Modifier.fillMaxWidth())
-                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { TextButton(modifier = Modifier.weight(1f), onClick = { viewModel.setSessionCategory(session, category.id); manage = null }) { Text(stringResource(R.string.session_move_category, category.name), Modifier.fillMaxWidth()) }; TextButton(onClick = { editCategory = category; manage = null }) { Text(stringResource(R.string.action_edit)) }; TextButton(onClick = { deleteCategory = category; manage = null }) { Text(stringResource(R.string.action_delete)) } }
             }
             TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; newCategory = true }) {
                 Text(stringResource(R.string.session_new_category), Modifier.fillMaxWidth())
@@ -446,6 +450,10 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
         title = stringResource(R.string.session_new_category), initial = "", hint = stringResource(R.string.session_category_name), action = stringResource(R.string.action_create),
         onConfirm = { viewModel.createSessionCategory(it); newCategory = false }, onDismiss = { newCategory = false },
     )
+    editCategory?.let { category -> TextPromptDialog(title = stringResource(R.string.session_category_edit), initial = category.name, hint = category.name, action = stringResource(R.string.action_save), onConfirm = { viewModel.renameSessionCategory(category, it); editCategory = null }, onDismiss = { editCategory = null }) }
+    deleteCategory?.let { category -> ConfirmDialog(title = stringResource(R.string.action_delete), body = category.name, action = stringResource(R.string.action_delete), onConfirm = { viewModel.deleteSessionCategory(category); deleteCategory = null }, onDismiss = { deleteCategory = null }) }
+    if (deleteVisible) ConfirmDialog(title = stringResource(R.string.session_batch_delete), body = stringResource(R.string.session_batch_delete_body, visibleSessions.size), action = stringResource(R.string.action_delete), onConfirm = { viewModel.batchDeleteVisibleSessions(); deleteVisible = false }, onDismiss = { deleteVisible = false })
+    workspaceFor?.let { session -> TextPromptDialog(title = stringResource(R.string.session_workspace), initial = session.workspace.orEmpty(), hint = "/workspace", action = stringResource(R.string.action_save), onConfirm = { viewModel.setSessionWorkspace(session, it); workspaceFor = null }, onDismiss = { workspaceFor = null }) }
     rename?.let { session ->
         TextPromptDialog(
             title = stringResource(R.string.chats_rename_title),
@@ -480,6 +488,7 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { deleteVisible = true }, enabled = visibleSessions.isNotEmpty()) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.session_batch_delete)) }
                     IconButton(
                         onClick = { viewModel.refreshSessions() },
                         enabled = !state.refreshingSessions,
@@ -531,6 +540,7 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
                             }
                         }
                     }
+                    if (query.isBlank()) item { TextButton(onClick = viewModel::loadMoreSessions, Modifier.fillMaxWidth()) { Text(stringResource(R.string.load_more)) } }
                 }
             }
             PullRefreshIndicator(

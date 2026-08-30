@@ -186,8 +186,10 @@ data class UiState(
     val backgroundAgentRuns: List<BackgroundAgentRun> = emptyList(),
     val sessionCategories: List<SessionCategory> = emptyList(),
     val sessionSearchResults: List<SessionSummary>? = null,
+    val sessionLimit: Int = 80,
     val workflows: List<StudioWorkflow> = emptyList(),
     val workflowRuns: Map<String, List<StudioWorkflowRun>> = emptyMap(),
+    val workflowSchedules: Map<String, List<WorkflowSchedule>> = emptyMap(),
     val loadingWorkflows: Boolean = false,
     val ekkoMemories: List<EkkoMemory> = emptyList(),
     val ekkoSkills: List<SkillCategory> = emptyList(),
@@ -404,7 +406,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val profile = _state.value.profileFilter.ifBlank { null }
         _state.update { it.copy(refreshingSessions = true, error = null) }
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { api.sessions(profile) } }
+            runCatching { withContext(Dispatchers.IO) { api.sessions(profile, _state.value.sessionLimit) } }
                 .onSuccess { sessions ->
                     _state.update { it.copy(sessions = sessions, refreshingSessions = false) }
                 }
@@ -418,6 +420,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
         }
     }
+    fun loadMoreSessions() { _state.update { it.copy(sessionLimit = it.sessionLimit + 80) }; refreshSessions() }
 
     fun searchSessions(query: String) {
         if (query.isBlank()) { _state.update { it.copy(sessionSearchResults = null) }; return }
@@ -437,6 +440,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         work = { api.createSessionCategory(name) },
         onSuccess = { category -> _state.update { it.copy(sessionCategories = it.sessionCategories + category) } },
     )
+    fun renameSessionCategory(category: SessionCategory, name: String) = launchWork(work = { api.renameSessionCategory(category.id, name) }, onSuccess = { loadSessionCategories() })
+    fun deleteSessionCategory(category: SessionCategory) = launchWork(work = { api.deleteSessionCategory(category.id) }, onSuccess = { loadSessionCategories(); refreshSessions() })
 
     fun setSessionCategory(session: SessionSummary, categoryId: Int?) = launchWork(
         work = { api.setSessionCategory(session.id, categoryId) },
@@ -447,6 +452,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         work = { api.archiveSession(session.id, !session.archived) },
         onSuccess = { refreshSessions(); _state.update { it.copy(sessionSearchResults = null, notice = str(if (session.archived) R.string.session_unarchived else R.string.session_archived)) } },
     )
+    fun setSessionWorkspace(session: SessionSummary, workspace: String) = launchWork(work = { api.setSessionWorkspace(session.id, workspace) }, onSuccess = { refreshSessions() })
+    fun exportSession(session: SessionSummary) { val safe = session.title.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { session.id }; val request = DownloadManager.Request(Uri.parse(api.sessionExportUrl(session.id))).setTitle("$safe.json").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "$safe.json"); store.token.takeIf(String::isNotBlank)?.let { request.addRequestHeader("Authorization", "Bearer $it") }; getApplication<Application>().getSystemService(DownloadManager::class.java)?.enqueue(request) }
+    fun batchDeleteVisibleSessions() { val ids = (_state.value.sessionSearchResults ?: _state.value.sessions).map { it.id }; if (ids.isEmpty()) return; launchWork(work = { api.batchDeleteSessions(ids) }, onSuccess = { refreshSessions() }) }
 
     fun openWorkflows() {
         _state.update { it.copy(screen = Screen.Workflows, loadingWorkflows = true, error = null) }
@@ -454,7 +462,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { withContext(Dispatchers.IO) { api.workflows(_state.value.profileFilter.ifBlank { null }) } }
                 .onSuccess { workflows ->
                     val runs = withContext(Dispatchers.IO) { workflows.associate { it.id to runCatching { api.workflowRuns(it.id) }.getOrDefault(emptyList()) } }
-                    _state.update { it.copy(workflows = workflows, workflowRuns = runs, loadingWorkflows = false) }
+                    val schedules = withContext(Dispatchers.IO) { workflows.associate { it.id to runCatching { api.workflowSchedules(it.id) }.getOrDefault(emptyList()) } }
+                    _state.update { it.copy(workflows = workflows, workflowRuns = runs, workflowSchedules = schedules, loadingWorkflows = false) }
                 }.onFailure { failure -> _state.update { it.copy(loadingWorkflows = false, error = failure.readableMessage(localized)) } }
         }
     }
@@ -473,6 +482,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val node = run.pendingNodeId ?: return
         launchWork(work = { api.approveWorkflowNode(run.workflowId, run.id, node, approved) }, onSuccess = { openWorkflows() })
     }
+    fun saveWorkflow(item: StudioWorkflow?, name: String, workspace: String, nodes: String, edges: String) = launchWork(work = { if (item == null) api.createWorkflow(name, _state.value.profileFilter.ifBlank { null }, workspace, nodes, edges) else api.updateWorkflow(item.id, name, workspace, nodes, edges) }, onSuccess = { openWorkflows() })
+    fun deleteWorkflow(item: StudioWorkflow) = launchWork(work = { api.deleteWorkflow(item.id) }, onSuccess = { openWorkflows() })
+    fun deleteAllWorkflows() = launchWork(work = { api.batchDeleteWorkflows(_state.value.workflows.map { it.id }) }, onSuccess = { openWorkflows() })
+    fun importWorkflow(document: String) = launchWork(work = { api.importWorkflow(document, _state.value.profileFilter.ifBlank { null }) }, onSuccess = { openWorkflows() })
+    fun exportWorkflow(item: StudioWorkflow) { val request = DownloadManager.Request(Uri.parse(api.workflowExportUrl(item.id))).setTitle("${item.name}.hermes-workflow.json").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED).setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "${item.name.replace(Regex("[^A-Za-z0-9._-]"), "_")}.hermes-workflow.json"); store.token.takeIf(String::isNotBlank)?.let { request.addRequestHeader("Authorization", "Bearer $it") }; getApplication<Application>().getSystemService(DownloadManager::class.java)?.enqueue(request) }
+    fun deleteWorkflowRun(run: StudioWorkflowRun) = launchWork(work = { api.deleteWorkflowRun(run.workflowId, run.id) }, onSuccess = { openWorkflows() })
+    fun rerunWorkflow(run: StudioWorkflowRun) { val node = run.pendingNodeId ?: return; launchWork(work = { api.rerunWorkflow(run.workflowId, run.id, node) }, onSuccess = { openWorkflows() }) }
+    fun createWorkflowSchedule(item: StudioWorkflow, expression: String, timezone: String) = launchWork(work = { api.createWorkflowSchedule(item.id, expression, timezone) }, onSuccess = { openWorkflows() })
+    fun toggleWorkflowSchedule(item: WorkflowSchedule) = launchWork(work = { api.toggleWorkflowSchedule(item) }, onSuccess = { openWorkflows() })
+    fun deleteWorkflowSchedule(item: WorkflowSchedule) = launchWork(work = { api.deleteWorkflowSchedule(item) }, onSuccess = { openWorkflows() })
 
     fun openGlobalAgent() = _state.update { it.copy(screen = Screen.GlobalAgent, error = null) }
 

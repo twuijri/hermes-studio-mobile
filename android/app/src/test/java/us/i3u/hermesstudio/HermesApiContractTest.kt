@@ -259,6 +259,34 @@ class HermesApiContractTest {
         assertEquals("waiting", JSONObject(block.body.readUtf8()).getString("reason"))
     }
 
+    @Test fun `workflow definitions schedules and reruns follow v0712 contracts`() {
+        enqueue("""{"workflow":{"id":"wf","name":"Build","nodes":[],"edges":[]}}""")
+        api.createWorkflow("Build", "default", "/repo", "[]", "[]")
+        assertEquals("/api/studio/workflows", server.takeRequest().path)
+        enqueue("""{"schedule":{"id":"s1"}}""")
+        api.createWorkflowSchedule("wf", "0 9 * * *", "Asia/Riyadh")
+        assertEquals("/api/studio/workflows/wf/schedules", server.takeRequest().path)
+        enqueue("""{"ok":true,"status":"accepted"}""")
+        api.rerunWorkflow("wf", "run", "node")
+        val rerun = server.takeRequest()
+        assertEquals("/api/studio/workflows/wf/runs/run/rerun-from-node", rerun.path)
+        assertEquals("node", JSONObject(rerun.body.readUtf8()).getString("node_id"))
+    }
+
+    @Test fun `session categories batch workspace and export follow Studio contracts`() {
+        enqueue("""{"category":{"id":2,"name":"Work"}}""")
+        api.renameSessionCategory(2, "Work")
+        assertEquals("/api/studio/session-categories/2", server.takeRequest().path)
+        enqueue("""{"ok":true}""")
+        api.setSessionWorkspace("abc", "/repo")
+        assertEquals("/api/studio/sessions/abc/workspace", server.takeRequest().path)
+        enqueue("""{"deleted":2,"failed":0,"errors":[]}""")
+        api.batchDeleteSessions(listOf("a", "b"))
+        val batch = server.takeRequest()
+        assertEquals("/api/studio/sessions/batch-delete", batch.path)
+        assertEquals(2, JSONObject(batch.body.readUtf8()).getJSONArray("sessions").length())
+    }
+
     @Test
     fun `conversation history keeps the numeric Studio message timestamp`() {
         enqueue(

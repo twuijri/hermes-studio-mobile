@@ -274,13 +274,18 @@ class HermesApi(
         val item = call("/api/studio/session-categories", "POST", JSONObject().put("name", name)).getJSONObject("category")
         return SessionCategory(item.getInt("id"), item.getString("name"))
     }
+    fun renameSessionCategory(id: Int, name: String) { call("/api/studio/session-categories/$id", "PATCH", JSONObject().put("name", name)) }
+    fun deleteSessionCategory(id: Int) { call("/api/studio/session-categories/$id", "DELETE") }
 
     fun setSessionCategory(sessionId: String, categoryId: Int?) {
         call("/api/studio/sessions/${enc(sessionId)}/category", "POST", JSONObject().put("categoryId", categoryId ?: JSONObject.NULL))
     }
+    fun batchDeleteSessions(ids: List<String>) { val sessions = JSONArray(ids.map { JSONObject().put("id", it) }); call("/api/studio/sessions/batch-delete", "POST", JSONObject().put("ids", JSONArray(ids)).put("sessions", sessions)) }
+    fun setSessionWorkspace(id: String, workspace: String) { call("/api/studio/sessions/${enc(id)}/workspace", "POST", JSONObject().put("workspace", workspace)) }
+    fun sessionExportUrl(id: String, compressed: Boolean = false, ext: String = "json"): String = url("/api/studio/sessions/${enc(id)}/export?mode=${if (compressed) "compressed" else "full"}&ext=${enc(ext)}&token=${enc(token)}")
 
     fun searchSessions(query: String, profile: String?): List<SessionSummary> {
-        val path = "/api/studio/sessions/search?q=${enc(query)}&limit=50" + if (profile.isNullOrBlank()) "" else "&profile=${enc(profile)}"
+        val path = "/api/studio/search/sessions?q=${enc(query)}&limit=50" + if (profile.isNullOrBlank()) "" else "&profile=${enc(profile)}"
         return parseSessions(call(path).optJSONArray("results") ?: JSONArray())
     }
 
@@ -597,6 +602,7 @@ class HermesApi(
                 agentMode = firstNonBlank(item, "agent_mode", "mode", "coding_agent_mode"),
                 archived = item.optBoolean("is_archived", false) || item.optInt("is_archived", 0) != 0,
                 categoryId = item.optInt("category_id", 0).takeIf { it > 0 },
+                workspace = firstNonBlank(item, "workspace", "cwd"),
             )
         }
 
@@ -604,7 +610,7 @@ class HermesApi(
         val path = "/api/studio/workflows" + if (profile.isNullOrBlank()) "" else "?profile=${enc(profile)}"
         val array = call(path).optJSONArray("workflows") ?: JSONArray()
         return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item ->
-            StudioWorkflow(item.optString("id"), item.optString("name"), item.optString("profile").ifBlank { "default" }, firstNonBlank(item, "workspace"), item.optJSONArray("nodes")?.length() ?: 0, item.optJSONArray("edges")?.length() ?: 0)
+            StudioWorkflow(item.optString("id"), item.optString("name"), item.optString("profile").ifBlank { "default" }, firstNonBlank(item, "workspace"), item.optJSONArray("nodes")?.length() ?: 0, item.optJSONArray("edges")?.length() ?: 0, (item.optJSONArray("nodes") ?: JSONArray()).toString(2), (item.optJSONArray("edges") ?: JSONArray()).toString(2))
         } }.filter { it.id.isNotBlank() }
     }
 
@@ -622,6 +628,18 @@ class HermesApi(
     fun approveWorkflowNode(workflowId: String, runId: String, nodeId: String, approved: Boolean) {
         call("/api/studio/workflows/${enc(workflowId)}/runs/${enc(runId)}/nodes/${enc(nodeId)}/approval", "POST", JSONObject().put("approved", approved))
     }
+    fun createWorkflow(name: String, profile: String?, workspace: String?, nodes: String, edges: String) { call("/api/studio/workflows", "POST", JSONObject().put("name", name).put("profile", profile ?: JSONObject.NULL).put("workspace", workspace?.takeIf(String::isNotBlank) ?: JSONObject.NULL).put("nodes", JSONArray(nodes)).put("edges", JSONArray(edges))) }
+    fun updateWorkflow(id: String, name: String, workspace: String?, nodes: String, edges: String) { call("/api/studio/workflows/${enc(id)}", "PATCH", JSONObject().put("name", name).put("workspace", workspace?.takeIf(String::isNotBlank) ?: JSONObject.NULL).put("nodes", JSONArray(nodes)).put("edges", JSONArray(edges))) }
+    fun deleteWorkflow(id: String) { call("/api/studio/workflows/${enc(id)}", "DELETE") }
+    fun batchDeleteWorkflows(ids: List<String>) { call("/api/studio/workflows/batch-delete", "POST", JSONObject().put("ids", JSONArray(ids))) }
+    fun workflowExportUrl(id: String): String = url("/api/studio/workflows/${enc(id)}/export?token=${enc(token)}")
+    fun importWorkflow(document: String, profile: String?): String { val preview = call("/api/studio/workflows/import/preview", "POST", JSONObject().put("document", document).put("profile", profile ?: JSONObject.NULL)).getJSONObject("preview"); val token = preview.getString("token"); call("/api/studio/workflows/import/confirm", "POST", JSONObject().put("token", token).put("profile", profile ?: JSONObject.NULL)); return preview.optJSONObject("summary")?.optString("name") ?: "" }
+    fun deleteWorkflowRun(workflowId: String, runId: String) { call("/api/studio/workflows/${enc(workflowId)}/runs/${enc(runId)}", "DELETE") }
+    fun rerunWorkflow(workflowId: String, runId: String, nodeId: String) { call("/api/studio/workflows/${enc(workflowId)}/runs/${enc(runId)}/rerun-from-node", "POST", JSONObject().put("node_id", nodeId).put("preserve_start_node", true)) }
+    fun workflowSchedules(id: String): List<WorkflowSchedule> { val a = call("/api/studio/workflows/${enc(id)}/schedules").optJSONArray("schedules") ?: JSONArray(); return (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { s -> WorkflowSchedule(s.optString("id"), s.optString("workflow_id"), s.optString("schedule"), s.optString("timezone"), s.optBoolean("enabled"), s.firstLong("next_run_at", "nextRunAt")) } } }
+    fun createWorkflowSchedule(id: String, schedule: String, timezone: String) { call("/api/studio/workflows/${enc(id)}/schedules", "POST", JSONObject().put("schedule", schedule).put("timezone", timezone).put("enabled", true)) }
+    fun toggleWorkflowSchedule(item: WorkflowSchedule) { call("/api/studio/workflows/${enc(item.workflowId)}/schedules/${enc(item.id)}", "PATCH", JSONObject().put("enabled", !item.enabled)) }
+    fun deleteWorkflowSchedule(item: WorkflowSchedule) { call("/api/studio/workflows/${enc(item.workflowId)}/schedules/${enc(item.id)}", "DELETE") }
 
     private fun parseWorkflowRun(item: JSONObject): StudioWorkflowRun {
         val sessions = item.optJSONArray("node_sessions") ?: JSONArray()
@@ -1978,6 +1996,7 @@ data class SessionSummary(
     val agentMode: String? = null,
     val archived: Boolean = false,
     val categoryId: Int? = null,
+    val workspace: String? = null,
 )
 
 data class ModelOption(

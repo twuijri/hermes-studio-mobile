@@ -178,7 +178,10 @@ data class StudioWorkflow(
     val workspace: String?,
     val nodeCount: Int,
     val edgeCount: Int,
+    val nodesJson: String = "[]",
+    val edgesJson: String = "[]",
 )
+data class WorkflowSchedule(val id: String, val workflowId: String, val schedule: String, val timezone: String, val enabled: Boolean, val nextRunAt: Long?)
 
 data class QueuedRun(
     val id: String,
