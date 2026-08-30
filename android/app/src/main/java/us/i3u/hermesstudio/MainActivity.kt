@@ -1155,6 +1155,28 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
                 }
             }
 
+            if (state.queuedRuns.isNotEmpty() || state.backgroundAgentRuns.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.queuedRuns.forEach { queued ->
+                        Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                            Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(stringResource(R.string.queued_run_summary, queued.position, queued.preview), maxLines = 1, style = MaterialTheme.typography.labelMedium)
+                                IconButton(onClick = { viewModel.insertQueuedRun(queued.id) }) { Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.queued_run_insert)) }
+                                IconButton(onClick = { viewModel.cancelQueuedRun(queued.id) }) { Icon(Icons.Filled.Close, stringResource(R.string.queued_run_cancel)) }
+                            }
+                        }
+                    }
+                    state.backgroundAgentRuns.forEach { agent ->
+                        Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                            Text(stringResource(R.string.background_agent_summary, agent.label, agent.status), modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), maxLines = 1, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+
             state.error?.let { ErrorNote(it) { viewModel.dismissError() } }
             state.notice?.let { NoticeNote(it) { viewModel.dismissNotice() } }
 

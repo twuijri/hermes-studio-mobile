@@ -184,6 +184,7 @@ data class UiState(
     val queuedRuns: List<QueuedRun> = emptyList(),
     val queueInsertionActive: Boolean = false,
     val backgroundAgentRuns: List<BackgroundAgentRun> = emptyList(),
+    val workspaceRunChanges: List<WorkspaceRunChange> = emptyList(),
     val sessionCategories: List<SessionCategory> = emptyList(),
     val sessionSearchResults: List<SessionSummary>? = null,
     val sessionLimit: Int = 80,
@@ -251,6 +252,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var weixinQrJob: Job? = null
     private var openingRoomId: String? = null
     private var activeRunSessionId: String? = null
+    private val resumePageIds = mutableMapOf<String, String>()
     private val queuedDownloadNames = mutableSetOf<String>()
 
     private val _state = MutableStateFlow(
@@ -901,7 +903,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     model = selectedModel,
                     provider = selectedProvider,
                     runtime = _state.value.selectedRuntime,
-                    cachedMessageId = _state.value.lines.lastOrNull { !it.messageId.isNullOrBlank() }?.messageId,
+                    cachedPageId = resumePageIds[sessionId],
                 )
                     .collect { event ->
                         when (event) {
@@ -973,6 +975,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 val index = tasks.indexOfFirst { it.id == event.task.id }
                                 if (index >= 0) tasks[index] = event.task else tasks += event.task
                                 state.copy(backgroundAgentRuns = tasks)
+                            }
+                            is RunEvent.ResumedState -> {
+                                event.pageId?.let { resumePageIds[sessionId] = it }
+                                _state.update { state ->
+                                    val restoredLines = event.messages?.mapNotNull { message ->
+                                        when (message.role) {
+                                            "user", "command" -> ChatLine(message.content, fromUser = true, messageId = message.id)
+                                            "assistant" -> ChatLine(message.content, fromUser = false, reasoning = message.reasoning, messageId = message.id)
+                                            else -> null
+                                        }
+                                    }
+                                    state.copy(
+                                        lines = restoredLines ?: state.lines,
+                                        sessionModel = event.model ?: state.sessionModel,
+                                        sessionProvider = event.provider ?: state.sessionProvider,
+                                        reasoningEffort = event.reasoningEffort ?: state.reasoningEffort,
+                                        openSession = state.openSession?.let { open ->
+                                            if (open.id == sessionId && event.workspace != null) open.copy(workspace = event.workspace) else open
+                                        },
+                                        workspaceRunChanges = event.workspaceChanges.ifEmpty { state.workspaceRunChanges },
+                                    )
+                                }
                             }
                             is RunEvent.Failed -> {
                                 // A socket that never got going is not a failed

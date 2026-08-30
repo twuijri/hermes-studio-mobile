@@ -798,4 +798,8 @@
     <string name="action_send">إرسال</string>
     <string name="workflow_editor">محرر سير العمل</string><string name="workflow_workspace">مساحة العمل</string><string name="workflow_schedule_add">إضافة جدولة</string><string name="workflow_timezone">المنطقة الزمنية</string><string name="workflow_rerun">إعادة التشغيل</string><string name="workflow_batch_delete">حذف مسارات العمل</string><string name="workflow_batch_delete_body">حذف جميع مسارات العمل وعددها %1$d؟</string>
     <string name="session_export">تصدير المحادثة</string><string name="session_workspace">مساحة عمل المحادثة</string><string name="session_category_edit">تعديل الفئة</string><string name="load_more">تحميل المزيد</string><string name="session_batch_delete">حذف المحادثات المعروضة</string><string name="session_batch_delete_body">حذف جميع المحادثات المعروضة وعددها %1$d؟</string>
+    <string name="queued_run_summary">في الطابور %1$d · %2$s</string>
+    <string name="queued_run_insert">تشغيل تالياً</string>
+    <string name="queued_run_cancel">إلغاء الرسالة من الطابور</string>
+    <string name="background_agent_summary">%1$s · %2$s</string>
 </resources>

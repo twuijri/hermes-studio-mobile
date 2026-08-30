@@ -799,4 +799,8 @@
     <string name="action_send">Send</string>
     <string name="workflow_editor">Workflow editor</string><string name="workflow_workspace">Workspace</string><string name="workflow_schedule_add">Add schedule</string><string name="workflow_timezone">Timezone</string><string name="workflow_rerun">Rerun</string><string name="workflow_batch_delete">Delete workflows</string><string name="workflow_batch_delete_body">Delete all %1$d workflows?</string>
     <string name="session_export">Export session</string><string name="session_workspace">Session workspace</string><string name="session_category_edit">Edit category</string><string name="load_more">Load more</string><string name="session_batch_delete">Delete shown sessions</string><string name="session_batch_delete_body">Delete all %1$d sessions currently shown?</string>
+    <string name="queued_run_summary">Queued %1$d · %2$s</string>
+    <string name="queued_run_insert">Run next</string>
+    <string name="queued_run_cancel">Cancel queued message</string>
+    <string name="background_agent_summary">%1$s · %2$s</string>
 </resources>

@@ -110,4 +110,35 @@ class ChatSocketEventTest {
 
         assertNull(completionFromResume(payload))
     }
+
+    @Test
+    fun `app resume preserves opaque page id messages metadata and workspace changes`() {
+        val payload = JSONObject()
+            .put("id", "7a5f-server-page-hash")
+            .put("messagesCached", false)
+            .put("model", "model-a")
+            .put("provider", "provider-a")
+            .put("reasoning_effort", "high")
+            .put("workspace", "/work/project")
+            .put("messages", JSONArray().put(JSONObject().put("id", "m1").put("role", "assistant").put("content", "restored")))
+            .put("workspaceRunChanges", JSONArray().put(JSONObject().put("change_id", "c1").put("assistant_message_id", "m1").put("files_changed", 2).put("additions", 8).put("deletions", 3)))
+
+        val event = parseResumedState(payload)
+
+        assertEquals("7a5f-server-page-hash", event.pageId)
+        assertEquals("restored", event.messages?.single()?.content)
+        assertEquals("model-a", event.model)
+        assertEquals("provider-a", event.provider)
+        assertEquals("high", event.reasoningEffort)
+        assertEquals("/work/project", event.workspace)
+        assertEquals("c1", event.workspaceChanges.single().id)
+    }
+
+    @Test
+    fun `cached app resume keeps existing messages`() {
+        val event = parseResumedState(JSONObject().put("id", "same-page").put("messagesCached", true))
+
+        assertNull(event.messages)
+        assertEquals("same-page", event.pageId)
+    }
 }

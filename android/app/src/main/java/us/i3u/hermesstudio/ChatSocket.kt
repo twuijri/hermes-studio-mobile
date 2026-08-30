@@ -36,12 +36,37 @@ sealed interface RunEvent {
     data class ActionResolved(val kind: RequiredAction, val id: String, val resolved: Boolean) : RunEvent
     data class QueueChanged(val messages: List<QueuedRun>?, val insertionActive: Boolean?) : RunEvent
     data class BackgroundAgent(val task: BackgroundAgentRun) : RunEvent
+    data class ResumedState(
+        val pageId: String?,
+        val messages: List<ResumedMessage>?,
+        val model: String?,
+        val provider: String?,
+        val reasoningEffort: String?,
+        val workspace: String?,
+        val workspaceChanges: List<WorkspaceRunChange>,
+    ) : RunEvent
     data class Failed(val error: String, val retryableTransport: Boolean) : RunEvent
 }
 
 enum class ToolRunStatus { Running, Done, Error }
 
 enum class RequiredAction { Approval, Clarification }
+
+data class ResumedMessage(
+    val id: String?,
+    val role: String,
+    val content: String,
+    val reasoning: String?,
+)
+
+data class WorkspaceRunChange(
+    val id: String,
+    val assistantMessageId: String?,
+    val workspace: String?,
+    val filesChanged: Int,
+    val additions: Int,
+    val deletions: Int,
+)
 
 /**
  * The streaming half of the chat API.
@@ -92,7 +117,7 @@ class ChatSocket(
         model: String?,
         provider: String?,
         runtime: AgentRuntimeSelection = AgentRuntimeSelection(),
-        cachedMessageId: String? = null,
+        cachedPageId: String? = null,
     ): Flow<RunEvent> = callbackFlow {
         val payload = JSONObject()
             .put("input", contentFor(input, attachments))
@@ -125,6 +150,7 @@ class ChatSocket(
         var runStarted = false
         var terminal = false
         var submitted = false
+        var resumePageId = cachedPageId
 
         fun eventPayload(args: Array<out Any?>): JSONObject? = args.firstOrNull() as? JSONObject
 
@@ -137,11 +163,12 @@ class ChatSocket(
                 // the existing session again instead of submitting the turn a
                 // second time or showing a false "disconnected" reply.
                 val resume = JSONObject().put("session_id", sessionId).put("profile", profile)
-                if (cachedMessageId.isNullOrBlank()) live.emit("resume", resume)
-                else live.emit("app.resume", resume.put("id", cachedMessageId))
+                live.emit("app.resume", resume.put("id", resumePageId.orEmpty()))
             }
         }
         fun restoreSnapshot(event: JSONObject) {
+            event.optString("id").takeIf(String::isNotBlank)?.let { resumePageId = it }
+            trySend(parseResumedState(event))
             usageFrom(event)?.let { trySend(it) }
             trySend(RunEvent.QueueChanged(parseQueue(event), event.optJSONObject("queueInsertion") != null))
             event.optJSONArray("backgroundTasks")?.let { tasks ->
@@ -152,9 +179,10 @@ class ChatSocket(
             event.optJSONArray("events")?.let { events ->
                 for (index in 0 until events.length()) {
                     val restored = events.optJSONObject(index) ?: continue
+                    val data = restored.optJSONObject("data") ?: restored
                     when (restored.optString("event")) {
-                        "approval.requested" -> parseRequiredAction(restored, RequiredAction.Approval)?.let { trySend(it) }
-                        "clarify.requested" -> parseRequiredAction(restored, RequiredAction.Clarification)?.let { trySend(it) }
+                        "approval.requested" -> parseRequiredAction(data, RequiredAction.Approval)?.let { trySend(it) }
+                        "clarify.requested" -> parseRequiredAction(data, RequiredAction.Clarification)?.let { trySend(it) }
                     }
                 }
             }
@@ -166,6 +194,7 @@ class ChatSocket(
                 runStarted = true
                 return
             }
+            if (event.optInt("queue_remaining", 0) > 0 || event.optInt("background_pending", 0) > 0) return
             terminal = true
             val completion = completionFromResume(event)
             if (completion != null) {
@@ -223,7 +252,6 @@ class ChatSocket(
             )?.let { trySend(it) }
         }
         live.on("run.completed") { args ->
-            terminal = true
             val event = args.firstOrNull() as? JSONObject
             usageFrom(event)?.let { trySend(it) }
             trySend(
@@ -232,14 +260,19 @@ class ChatSocket(
                     reasoning = event?.optString("reasoning").orEmpty(),
                 ),
             )
-            close()
+            if ((event?.optInt("queue_remaining", 0) ?: 0) == 0 && (event?.optInt("background_pending", 0) ?: 0) == 0) {
+                terminal = true
+                close()
+            }
         }
         live.on("run.failed") { args ->
-            terminal = true
             val event = args.firstOrNull() as? JSONObject
             val message = event?.optString("error").orEmpty()
             trySend(RunEvent.Failed(message.ifBlank { "run failed" }, retryableTransport = false))
-            close()
+            if ((event?.optInt("queue_remaining", 0) ?: 0) == 0 && (event?.optInt("background_pending", 0) ?: 0) == 0) {
+                terminal = true
+                close()
+            }
         }
         // Keep the full interaction identity so the mobile decision is applied
         // to the exact interrupted run, including after a reconnect.
@@ -342,6 +375,57 @@ class ChatSocket(
                 }
             }
         }
+}
+
+internal fun parseResumedState(payload: JSONObject): RunEvent.ResumedState {
+    val messages = if (payload.optBoolean("messagesCached", false)) null else payload.optJSONArray("messages")?.let { array ->
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val role = item.optString("display_role").ifBlank { item.optString("role") }
+            val raw = item.opt("display_content").takeUnless { it == null || it == JSONObject.NULL }
+                ?: item.opt("content")
+            val content = when (raw) {
+                is String -> raw
+                is JSONArray -> (0 until raw.length()).mapNotNull { partIndex ->
+                    val part = raw.optJSONObject(partIndex)
+                    part?.optString("text")?.takeIf(String::isNotBlank)
+                }.joinToString("\n")
+                null, JSONObject.NULL -> ""
+                else -> raw.toString()
+            }
+            if (role.isBlank() || content.isBlank()) return@mapNotNull null
+            ResumedMessage(
+                id = item.firstString("id", "message_id").takeIf(String::isNotBlank),
+                role = role,
+                content = content,
+                reasoning = item.optString("reasoning").takeIf(String::isNotBlank),
+            )
+        }
+    }
+    val changes = payload.optJSONArray("workspaceRunChanges")?.let { array ->
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.firstString("change_id", "id")
+            if (id.isBlank()) return@mapNotNull null
+            WorkspaceRunChange(
+                id = id,
+                assistantMessageId = item.firstString("assistant_message_id", "message_id").takeIf(String::isNotBlank),
+                workspace = item.optString("workspace").takeIf(String::isNotBlank),
+                filesChanged = item.optInt("files_changed"),
+                additions = item.optInt("additions"),
+                deletions = item.optInt("deletions"),
+            )
+        }
+    }.orEmpty()
+    return RunEvent.ResumedState(
+        pageId = payload.optString("id").takeIf(String::isNotBlank),
+        messages = messages,
+        model = payload.optString("model").takeIf(String::isNotBlank),
+        provider = payload.optString("provider").takeIf(String::isNotBlank),
+        reasoningEffort = payload.firstString("reasoning_effort", "reasoningEffort").takeIf(String::isNotBlank),
+        workspace = payload.optString("workspace").takeIf(String::isNotBlank),
+        workspaceChanges = changes,
+    )
 }
 
 internal fun usageFrom(payload: JSONObject?): RunEvent.Usage? {
