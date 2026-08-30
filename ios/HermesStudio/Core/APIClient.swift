@@ -395,7 +395,14 @@ final class APIClient: @unchecked Sendable {
     func reassignKanban(board: String, id: String, profile: String, reclaim: Bool = true) async throws { _ = try await object("/api/hermes/kanban/\(id.urlEncoded)/reassign?board=\(board.urlEncoded)", method: "POST", body: ["profile": profile, "reclaim": reclaim]) }
     func kanbanLog(board: String, id: String) async throws -> JSON { try await object("/api/hermes/kanban/\(id.urlEncoded)/log?board=\(board.urlEncoded)&tail=400") }
     func kanbanAttachments(board: String, id: String) async throws -> [JSON] { try await array("/api/hermes/kanban/\(id.urlEncoded)/attachments?board=\(board.urlEncoded)", keys: ["attachments"]) }
-    func kanbanAttachmentURL(board: String, taskID: String, attachmentID: Int) -> URL? { var components = URLComponents(string: baseURL + "/api/hermes/kanban/\(taskID.urlEncoded)/attachments/\(attachmentID)?board=\(board.urlEncoded)"); if !token.isEmpty { components?.queryItems = (components?.queryItems ?? []) + [URLQueryItem(name: "token", value: token)] }; return components?.url }
+    func kanbanAttachmentURL(board: String, taskID: String, attachmentID: Int) -> URL? {
+        var components = URLComponents(string: baseURL + "/api/hermes/kanban/\(taskID.urlEncoded)/attachments/\(attachmentID)?board=\(board.urlEncoded)")
+        if !token.isEmpty {
+            let existingItems = components?.queryItems ?? []
+            components?.queryItems = existingItems + [URLQueryItem(name: "token", value: token)]
+        }
+        return components?.url
+    }
 
     func cronJobs(profile: String) async throws -> [CronJob] {
         try await array("/api/hermes/jobs?include_disabled=true", keys: ["jobs"], profile: profile).map(CronJob.init)
