@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 enum class Screen {
     Loading, Onboarding, Login, Chats, Groups, AgentHub, Conversation, Room, Profiles,
     Settings, MoreSettings, SettingsGroup, Channels, Channel, CronJobs, CronJob, CronHistory,
-    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes,
+    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes, Workflows, GlobalAgent,
 }
 
 /** Settings is a short list of these; each opens its own screen. */
@@ -180,6 +180,11 @@ data class UiState(
     val loadingAgentRuntimes: Boolean = false,
     val selectedRuntime: AgentRuntimeSelection = AgentRuntimeSelection(),
     val pendingRunAction: PendingRunAction? = null,
+    val sessionCategories: List<SessionCategory> = emptyList(),
+    val sessionSearchResults: List<SessionSummary>? = null,
+    val workflows: List<StudioWorkflow> = emptyList(),
+    val workflowRuns: Map<String, List<StudioWorkflowRun>> = emptyMap(),
+    val loadingWorkflows: Boolean = false,
 )
 
 data class WeixinQrUi(
@@ -374,6 +379,67 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
         }
+    }
+
+    fun searchSessions(query: String) {
+        if (query.isBlank()) { _state.update { it.copy(sessionSearchResults = null) }; return }
+        val profile = _state.value.profileFilter.ifBlank { null }
+        viewModelScope.launch {
+            delay(250)
+            runCatching { withContext(Dispatchers.IO) { api.searchSessions(query.trim(), profile) } }
+                .onSuccess { results -> _state.update { it.copy(sessionSearchResults = results) } }
+        }
+    }
+
+    fun loadSessionCategories() {
+        viewModelScope.launch { runCatching { withContext(Dispatchers.IO) { api.sessionCategories() } }.onSuccess { categories -> _state.update { it.copy(sessionCategories = categories) } } }
+    }
+
+    fun createSessionCategory(name: String) = launchWork(
+        work = { api.createSessionCategory(name) },
+        onSuccess = { category -> _state.update { it.copy(sessionCategories = it.sessionCategories + category) } },
+    )
+
+    fun setSessionCategory(session: SessionSummary, categoryId: Int?) = launchWork(
+        work = { api.setSessionCategory(session.id, categoryId) },
+        onSuccess = { refreshSessions(); _state.update { it.copy(sessionSearchResults = null) } },
+    )
+
+    fun archiveSession(session: SessionSummary) = launchWork(
+        work = { api.archiveSession(session.id, !session.archived) },
+        onSuccess = { refreshSessions(); _state.update { it.copy(sessionSearchResults = null, notice = str(if (session.archived) R.string.session_unarchived else R.string.session_archived)) } },
+    )
+
+    fun openWorkflows() {
+        _state.update { it.copy(screen = Screen.Workflows, loadingWorkflows = true, error = null) }
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.workflows(_state.value.profileFilter.ifBlank { null }) } }
+                .onSuccess { workflows ->
+                    val runs = withContext(Dispatchers.IO) { workflows.associate { it.id to runCatching { api.workflowRuns(it.id) }.getOrDefault(emptyList()) } }
+                    _state.update { it.copy(workflows = workflows, workflowRuns = runs, loadingWorkflows = false) }
+                }.onFailure { failure -> _state.update { it.copy(loadingWorkflows = false, error = failure.readableMessage(localized)) } }
+        }
+    }
+
+    fun runWorkflow(workflow: StudioWorkflow, input: String?) = launchWork(
+        work = { api.runWorkflow(workflow.id, input) },
+        onSuccess = { openWorkflows() },
+    )
+
+    fun stopWorkflowRun(run: StudioWorkflowRun) = launchWork(
+        work = { api.stopWorkflowRun(run.workflowId, run.id) },
+        onSuccess = { openWorkflows() },
+    )
+
+    fun approveWorkflowNode(run: StudioWorkflowRun, approved: Boolean) {
+        val node = run.pendingNodeId ?: return
+        launchWork(work = { api.approveWorkflowNode(run.workflowId, run.id, node, approved) }, onSuccess = { openWorkflows() })
+    }
+
+    fun openGlobalAgent() = _state.update { it.copy(screen = Screen.GlobalAgent, error = null) }
+
+    fun startGlobalAgentConversation() {
+        startNewConversation(AgentRuntimeSelection("ekko-agent", "ekko", "Global Agent", globalAgent = true))
     }
 
     fun refreshRooms() = launchWork(
@@ -854,8 +920,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             else -> "hermes"
         }
         val family = when (id) { "hermes" -> "hermes"; "ekko-agent" -> "ekko"; else -> "coding" }
-        val name = when (id) { "hermes" -> "Hermes"; "ekko-agent" -> "Ekko"; "claude-code" -> "Claude Code"; "codex" -> "Codex"; else -> "Pi" }
-        return AgentRuntimeSelection(id, family, name)
+        val global = session.source == "global_agent"
+        val name = if (global) "Global Agent" else when (id) { "hermes" -> "Hermes"; "ekko-agent" -> "Ekko"; "claude-code" -> "Claude Code"; "codex" -> "Codex"; else -> "Pi" }
+        return AgentRuntimeSelection(id, family, name, global)
     }
 
     private fun updateLastReply(
@@ -2761,7 +2828,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Screen.CronJob, Screen.CronHistory -> Screen.CronJobs
                 Screen.KanbanTask -> Screen.Kanban
                 Screen.Skill -> Screen.Skills
-                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes -> Screen.AgentHub
+                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent -> Screen.AgentHub
                 Screen.Channels, Screen.SettingsGroup, Screen.CronJobs -> state.toolReturnScreen
                 Screen.Profiles -> state.profilesReturnScreen
                 Screen.MoreSettings -> Screen.Settings

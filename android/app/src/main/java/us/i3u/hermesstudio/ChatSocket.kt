@@ -90,7 +90,8 @@ class ChatSocket(
         if (!model.isNullOrBlank()) payload.put("model", model)
         if (!provider.isNullOrBlank()) payload.put("provider", provider)
         if (!runtime.isHermes) {
-            payload.put("source", "coding_agent")
+            payload.put("source", if (runtime.globalAgent) "global_agent" else "coding_agent")
+            if (runtime.globalAgent) payload.put("session_source", "global_agent")
             payload.put("coding_agent_id", runtime.codingAgentId)
             payload.put("mode", "global")
         }

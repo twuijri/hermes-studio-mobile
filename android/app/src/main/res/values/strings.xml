@@ -740,4 +740,27 @@
     <string name="approval_once">Allow once</string>
     <string name="approval_session">Allow for session</string>
     <string name="approval_always">Always allow</string>
+    <string name="session_archive">Archive</string>
+    <string name="session_unarchive">Unarchive</string>
+    <string name="session_archived">Conversation archived</string>
+    <string name="session_unarchived">Conversation restored</string>
+    <string name="session_move_category">Move to %1$s</string>
+    <string name="session_new_category">New category</string>
+    <string name="session_category_name">Category name</string>
+    <string name="workflows_title">Workflows</string>
+    <string name="workflows_hub_note">Run, monitor and approve automated work</string>
+    <string name="workflows_mobile_note">A touch-friendly view of Studio workflows, recent runs and approval gates.</string>
+    <string name="workflows_empty">No workflows in this profile</string>
+    <string name="workflow_run">Run</string>
+    <string name="workflow_run_title">Run %1$s</string>
+    <string name="workflow_input">Optional input</string>
+    <string name="workflow_summary">%1$s · %2$d nodes · %3$d connections</string>
+    <string name="global_agent_title">Global Agent</string>
+    <string name="global_agent_hub_note">One persistent agent across Studio devices</string>
+    <string name="global_agent_description">Continue a persistent Global Agent conversation using Studio’s built-in Ekko runtime.</string>
+    <string name="global_agent_profile">Active profile: %1$s</string>
+    <string name="global_agent_open">Open Global Agent chat</string>
+    <string name="global_agent_remote_note">The conversation remains on Studio and can continue from another connected device.</string>
+    <string name="action_stop">Stop</string>
+    <string name="global_agent_sessions">Recent sessions</string>
 </resources>

@@ -739,4 +739,27 @@
     <string name="approval_once">سماح لمرة واحدة</string>
     <string name="approval_session">سماح لهذه الجلسة</string>
     <string name="approval_always">سماح دائم</string>
+    <string name="session_archive">أرشفة</string>
+    <string name="session_unarchive">إلغاء الأرشفة</string>
+    <string name="session_archived">تمت أرشفة المحادثة</string>
+    <string name="session_unarchived">تمت استعادة المحادثة</string>
+    <string name="session_move_category">نقل إلى %1$s</string>
+    <string name="session_new_category">تصنيف جديد</string>
+    <string name="session_category_name">اسم التصنيف</string>
+    <string name="workflows_title">مسارات العمل</string>
+    <string name="workflows_hub_note">تشغيل الأعمال المؤتمتة ومتابعتها والموافقة عليها</string>
+    <string name="workflows_mobile_note">عرض مناسب للمس لمسارات الاستديو وعمليات التشغيل الأخيرة وبوابات الموافقة.</string>
+    <string name="workflows_empty">لا توجد مسارات عمل في هذا البروفايل</string>
+    <string name="workflow_run">تشغيل</string>
+    <string name="workflow_run_title">تشغيل %1$s</string>
+    <string name="workflow_input">مدخل اختياري</string>
+    <string name="workflow_summary">%1$s · %2$d عقد · %3$d روابط</string>
+    <string name="global_agent_title">الوكيل العام</string>
+    <string name="global_agent_hub_note">وكيل مستمر واحد عبر أجهزة الاستديو</string>
+    <string name="global_agent_description">تابع محادثة مستمرة مع الوكيل العام باستخدام محرك Ekko المدمج في الاستديو.</string>
+    <string name="global_agent_profile">البروفايل النشط: %1$s</string>
+    <string name="global_agent_open">فتح محادثة الوكيل العام</string>
+    <string name="global_agent_remote_note">تبقى المحادثة في الاستديو ويمكن متابعتها من جهاز آخر متصل.</string>
+    <string name="action_stop">إيقاف</string>
+    <string name="global_agent_sessions">الجلسات الأخيرة</string>
 </resources>

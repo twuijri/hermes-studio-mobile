@@ -265,7 +265,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Conversation, Screen.Room, Screen.Profiles, Screen.Settings,
         Screen.MoreSettings, Screen.SettingsGroup, Screen.Channels, Screen.Channel, Screen.CronJobs,
         Screen.CronJob, Screen.CronHistory, Screen.Kanban, Screen.KanbanTask, Screen.Skills,
-        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes,
+        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent,
         -> BackHandler { viewModel.back() }
         Screen.Groups, Screen.AgentHub -> BackHandler { viewModel.showTab(Tab.Chats) }
         else -> Unit
@@ -300,6 +300,8 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Pets -> PetsScreen(state, viewModel)
         Screen.Insights -> InsightsScreen(state, viewModel)
         Screen.AgentRuntimes -> AgentRuntimeScreen(state, viewModel)
+        Screen.Workflows -> WorkflowsScreen(state, viewModel)
+        Screen.GlobalAgent -> GlobalAgentScreen(state, viewModel)
         Screen.Login -> LoginScreen(state, viewModel)
         Screen.Chats -> ChatsScreen(state, viewModel)
         Screen.Groups -> GroupsScreen(state, viewModel)
@@ -387,14 +389,13 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
     var rename by remember { mutableStateOf<SessionSummary?>(null) }
     var confirmDelete by remember { mutableStateOf<SessionSummary?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
-    val visibleSessions = remember(state.sessions, query) {
+    var newCategory by remember { mutableStateOf(false) }
+    val visibleSessions = remember(state.sessions, state.sessionSearchResults, query) {
         val clean = query.trim()
-        if (clean.isBlank()) state.sessions else state.sessions.filter {
-            it.title.contains(clean, true) ||
-                it.profile.orEmpty().contains(clean, true) ||
-                it.model.orEmpty().contains(clean, true)
-        }
+        if (clean.isBlank()) state.sessions else state.sessionSearchResults.orEmpty()
     }
+    LaunchedEffect(query) { viewModel.searchSessions(query) }
+    LaunchedEffect(Unit) { viewModel.loadSessionCategories() }
     val pullRefreshState = rememberPullRefreshState(
         refreshing = state.refreshingSessions,
         onRefresh = viewModel::refreshSessions,
@@ -416,8 +417,23 @@ private fun ChatsScreen(state: UiState, viewModel: AppViewModel) {
                     confirmDelete = session
                 },
             )
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { viewModel.archiveSession(session); manage = null }) {
+                Text(stringResource(if (session.archived) R.string.session_unarchive else R.string.session_archive), Modifier.fillMaxWidth())
+            }
+            state.sessionCategories.forEach { category ->
+                TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { viewModel.setSessionCategory(session, category.id); manage = null }) {
+                    Text(stringResource(R.string.session_move_category, category.name), Modifier.fillMaxWidth())
+                }
+            }
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; newCategory = true }) {
+                Text(stringResource(R.string.session_new_category), Modifier.fillMaxWidth())
+            }
         }
     }
+    if (newCategory) TextPromptDialog(
+        title = stringResource(R.string.session_new_category), initial = "", hint = stringResource(R.string.session_category_name), action = stringResource(R.string.action_create),
+        onConfirm = { viewModel.createSessionCategory(it); newCategory = false }, onDismiss = { newCategory = false },
+    )
     rename?.let { session ->
         TextPromptDialog(
             title = stringResource(R.string.chats_rename_title),
@@ -551,7 +567,7 @@ private fun SessionRow(
                 )
             }
             Text(
-                text = listOfNotNull(session.profile, session.model).joinToString(" · "),
+                text = listOfNotNull(session.agentId ?: session.source.takeIf { it != "cli" }, session.profile, session.model).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -2471,6 +2487,14 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
             item {
                 StudioGroupedCard {
                     StudioDestinationRow(
+                        icon = Icons.Filled.AccountTree,
+                        color = Color(0xFF35B7DB),
+                        title = stringResource(R.string.workflows_title),
+                        subtitle = stringResource(R.string.workflows_hub_note),
+                        onClick = { viewModel.openWorkflows() },
+                    )
+                    StudioCardDivider()
+                    StudioDestinationRow(
                         icon = Icons.Filled.Schedule,
                         color = Color(0xFF4D8DFF),
                         title = stringResource(R.string.cron_title),
@@ -2514,6 +2538,13 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
                         subtitle = stringResource(R.string.insights_subtitle),
                         onClick = { viewModel.openInsights() },
                     )
+                }
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.global_agent_title)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(Icons.Filled.AutoAwesome, Color(0xFF2AAE88), stringResource(R.string.global_agent_title), stringResource(R.string.global_agent_hub_note), { viewModel.openGlobalAgent() })
                 }
             }
 

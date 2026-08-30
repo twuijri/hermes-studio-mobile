@@ -158,6 +158,7 @@ data class AgentRuntimeSelection(
     val id: String = "hermes",
     val family: String = "hermes",
     val name: String = "Hermes",
+    val globalAgent: Boolean = false,
 ) {
     val isHermes: Boolean get() = id == "hermes"
     val codingAgentId: String? get() = when (id) {
@@ -167,6 +168,26 @@ data class AgentRuntimeSelection(
         else -> null
     }
 }
+
+data class SessionCategory(val id: Int, val name: String)
+
+data class StudioWorkflow(
+    val id: String,
+    val name: String,
+    val profile: String,
+    val workspace: String?,
+    val nodeCount: Int,
+    val edgeCount: Int,
+)
+
+data class StudioWorkflowRun(
+    val id: String,
+    val workflowId: String,
+    val status: String,
+    val createdAt: Long,
+    val error: String?,
+    val pendingNodeId: String?,
+)
 
 data class PluginsUiState(
     val loading: Boolean = false,

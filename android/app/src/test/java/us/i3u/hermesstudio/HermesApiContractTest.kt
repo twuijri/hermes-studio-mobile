@@ -68,7 +68,7 @@ class HermesApiContractTest {
 
         assertEquals("1710001234", session.updatedAt)
         assertEquals("openrouter", session.provider)
-        assertEquals("/api/hermes/sessions?profile=manager&limit=80", server.takeRequest().path)
+        assertEquals("/api/studio/sessions?profile=manager&limit=80", server.takeRequest().path)
     }
 
     @Test
@@ -100,6 +100,37 @@ class HermesApiContractTest {
         assertEquals("coding_agent", body.getString("source"))
         assertEquals("codex", body.getString("coding_agent_id"))
         assertEquals("global", body.getString("mode"))
+    }
+
+    @Test
+    fun `session categories archive and assignment use Studio APIs`() {
+        enqueue("""{"categories":[{"id":3,"name":"Research"}]}""")
+        assertEquals("Research", api.sessionCategories().single().name)
+        assertEquals("/api/studio/session-categories", server.takeRequest().path)
+
+        enqueue("""{"ok":true}""")
+        api.setSessionCategory("session 1", 3)
+        val assignment = server.takeRequest()
+        assertEquals("/api/studio/sessions/session+1/category", assignment.path)
+        assertEquals(3, JSONObject(assignment.body.readUtf8()).getInt("categoryId"))
+
+        enqueue("""{"ok":true}""")
+        api.archiveSession("session 1", true)
+        assertEquals("/api/studio/sessions/session+1/archive", server.takeRequest().path)
+    }
+
+    @Test
+    fun `workflow execution and history follow v0712 contracts`() {
+        enqueue("""{"workflows":[{"id":"wf-1","name":"Release","profile":"manager","nodes":[{},{}],"edges":[{}]}]}""")
+        val workflow = api.workflows("manager").single()
+        assertEquals(2, workflow.nodeCount)
+        assertEquals("/api/studio/workflows?profile=manager", server.takeRequest().path)
+
+        enqueue("""{"ok":true,"status":"accepted"}""")
+        api.runWorkflow("wf-1", "ship")
+        val run = server.takeRequest()
+        assertEquals("/api/studio/workflows/wf-1/run", run.path)
+        assertEquals("ship", JSONObject(run.body.readUtf8()).getString("input"))
     }
 
     @Test

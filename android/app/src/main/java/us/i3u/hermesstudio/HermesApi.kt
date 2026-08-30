@@ -236,12 +236,37 @@ class HermesApi(
 
     /** POST /api/hermes/sessions/{id}/rename */
     fun renameSession(sessionId: String, title: String) {
-        call("/api/hermes/sessions/${enc(sessionId)}/rename", "POST", JSONObject().put("title", title))
+        runCatching { call("/api/studio/sessions/${enc(sessionId)}/rename", "POST", JSONObject().put("title", title)) }
+            .getOrElse { call("/api/hermes/sessions/${enc(sessionId)}/rename", "POST", JSONObject().put("title", title)) }
     }
 
     /** DELETE /api/hermes/sessions/{id} */
     fun deleteSession(sessionId: String) {
-        call("/api/hermes/sessions/${enc(sessionId)}", "DELETE")
+        runCatching { call("/api/studio/sessions/${enc(sessionId)}", "DELETE") }
+            .getOrElse { call("/api/hermes/sessions/${enc(sessionId)}", "DELETE") }
+    }
+
+    fun archiveSession(sessionId: String, archived: Boolean) {
+        call("/api/studio/sessions/${enc(sessionId)}/${if (archived) "archive" else "unarchive"}", "POST", JSONObject())
+    }
+
+    fun sessionCategories(): List<SessionCategory> {
+        val array = call("/api/studio/session-categories").optJSONArray("categories") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { SessionCategory(it.optInt("id"), it.optString("name")) } }.filter { it.id > 0 && it.name.isNotBlank() }
+    }
+
+    fun createSessionCategory(name: String): SessionCategory {
+        val item = call("/api/studio/session-categories", "POST", JSONObject().put("name", name)).getJSONObject("category")
+        return SessionCategory(item.getInt("id"), item.getString("name"))
+    }
+
+    fun setSessionCategory(sessionId: String, categoryId: Int?) {
+        call("/api/studio/sessions/${enc(sessionId)}/category", "POST", JSONObject().put("categoryId", categoryId ?: JSONObject.NULL))
+    }
+
+    fun searchSessions(query: String, profile: String?): List<SessionSummary> {
+        val path = "/api/studio/sessions/search?q=${enc(query)}&limit=50" + if (profile.isNullOrBlank()) "" else "&profile=${enc(profile)}"
+        return parseSessions(call(path).optJSONArray("results") ?: JSONArray())
     }
 
     /** POST /api/hermes/profiles */
@@ -520,13 +545,20 @@ class HermesApi(
 
     /** GET /api/hermes/sessions — most recent conversations for a profile. */
     fun sessions(profile: String?, limit: Int = 80): List<SessionSummary> {
-        val path = if (profile.isNullOrBlank()) {
-            "/api/hermes/sessions?limit=$limit"
+        val canonical = if (profile.isNullOrBlank()) {
+            "/api/studio/sessions?limit=$limit"
         } else {
-            "/api/hermes/sessions?profile=${enc(profile)}&limit=$limit"
+            "/api/studio/sessions?profile=${enc(profile)}&limit=$limit"
         }
-        val array = call(path).optJSONArray("sessions") ?: JSONArray()
-        return (0 until array.length()).mapNotNull { index ->
+        val result = runCatching { call(canonical) }.getOrElse {
+            val legacy = canonical.replace("/api/studio/sessions", "/api/hermes/sessions")
+            call(legacy)
+        }
+        return parseSessions(result.optJSONArray("sessions") ?: JSONArray())
+    }
+
+    private fun parseSessions(array: JSONArray): List<SessionSummary> =
+        (0 until array.length()).mapNotNull { index ->
             val item = array.optJSONObject(index) ?: return@mapNotNull null
             val id = firstNonBlank(item, "id", "session_id", "sessionId") ?: return@mapNotNull null
             SessionSummary(
@@ -547,9 +579,39 @@ class HermesApi(
                 profile = firstNonBlank(item, "profile"),
                 source = firstNonBlank(item, "source", "session_source") ?: "cli",
                 agentId = firstNonBlank(item, "coding_agent_id", "agent_id", "agent"),
-                agentMode = firstNonBlank(item, "mode", "coding_agent_mode"),
+                agentMode = firstNonBlank(item, "agent_mode", "mode", "coding_agent_mode"),
+                archived = item.optBoolean("is_archived", false) || item.optInt("is_archived", 0) != 0,
+                categoryId = item.optInt("category_id", 0).takeIf { it > 0 },
             )
         }
+
+    fun workflows(profile: String?): List<StudioWorkflow> {
+        val path = "/api/studio/workflows" + if (profile.isNullOrBlank()) "" else "?profile=${enc(profile)}"
+        val array = call(path).optJSONArray("workflows") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item ->
+            StudioWorkflow(item.optString("id"), item.optString("name"), item.optString("profile").ifBlank { "default" }, firstNonBlank(item, "workspace"), item.optJSONArray("nodes")?.length() ?: 0, item.optJSONArray("edges")?.length() ?: 0)
+        } }.filter { it.id.isNotBlank() }
+    }
+
+    fun workflowRuns(workflowId: String): List<StudioWorkflowRun> {
+        val array = call("/api/studio/workflows/${enc(workflowId)}/runs?limit=30").optJSONArray("runs") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { parseWorkflowRun(it) } }
+    }
+
+    fun runWorkflow(workflowId: String, input: String?) {
+        call("/api/studio/workflows/${enc(workflowId)}/run", "POST", JSONObject().apply { if (!input.isNullOrBlank()) put("input", input) })
+    }
+
+    fun stopWorkflowRun(workflowId: String, runId: String) { call("/api/studio/workflows/${enc(workflowId)}/runs/${enc(runId)}/stop", "POST", JSONObject()) }
+
+    fun approveWorkflowNode(workflowId: String, runId: String, nodeId: String, approved: Boolean) {
+        call("/api/studio/workflows/${enc(workflowId)}/runs/${enc(runId)}/nodes/${enc(nodeId)}/approval", "POST", JSONObject().put("approved", approved))
+    }
+
+    private fun parseWorkflowRun(item: JSONObject): StudioWorkflowRun {
+        val sessions = item.optJSONArray("node_sessions") ?: JSONArray()
+        val pending = (0 until sessions.length()).mapNotNull { sessions.optJSONObject(it) }.firstOrNull { it.optString("status") == "blocked" }?.optString("node_id")
+        return StudioWorkflowRun(item.optString("id"), item.optString("workflow_id"), item.optString("status"), item.optLong("created_at"), firstNonBlank(item, "error"), pending)
     }
 
     /** GET /api/hermes/available-models — flattened to what the picker needs. */
@@ -1460,7 +1522,8 @@ class HermesApi(
         if (!model.isNullOrBlank()) body.put("model", model)
         if (!provider.isNullOrBlank()) body.put("provider", provider)
         if (!runtime.isHermes) {
-            body.put("source", "coding_agent")
+            body.put("source", if (runtime.globalAgent) "global_agent" else "coding_agent")
+            if (runtime.globalAgent) body.put("session_source", "global_agent")
             body.put("coding_agent_id", runtime.codingAgentId)
             body.put("mode", "global")
         }
@@ -1714,6 +1777,8 @@ data class SessionSummary(
     val source: String = "cli",
     val agentId: String? = null,
     val agentMode: String? = null,
+    val archived: Boolean = false,
+    val categoryId: Int? = null,
 )
 
 data class ModelOption(
