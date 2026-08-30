@@ -265,7 +265,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Conversation, Screen.Room, Screen.Profiles, Screen.Settings,
         Screen.MoreSettings, Screen.SettingsGroup, Screen.Channels, Screen.Channel, Screen.CronJobs,
         Screen.CronJob, Screen.CronHistory, Screen.Kanban, Screen.KanbanTask, Screen.Skills,
-        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights,
+        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes,
         -> BackHandler { viewModel.back() }
         Screen.Groups, Screen.AgentHub -> BackHandler { viewModel.showTab(Tab.Chats) }
         else -> Unit
@@ -299,6 +299,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Mcp -> McpScreen(state, viewModel)
         Screen.Pets -> PetsScreen(state, viewModel)
         Screen.Insights -> InsightsScreen(state, viewModel)
+        Screen.AgentRuntimes -> AgentRuntimeScreen(state, viewModel)
         Screen.Login -> LoginScreen(state, viewModel)
         Screen.Chats -> ChatsScreen(state, viewModel)
         Screen.Groups -> GroupsScreen(state, viewModel)
@@ -901,6 +902,57 @@ private fun ConversationScreen(state: UiState, viewModel: AppViewModel) {
     val conversationKey = state.openSession?.id ?: "new"
     var reachedInitialBottom by remember(conversationKey) { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
+    var clarification by rememberSaveable(state.pendingRunAction?.id) { mutableStateOf("") }
+
+    state.pendingRunAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(if (action.kind == RequiredAction.Approval) R.string.run_approval_title else R.string.run_clarification_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(action.prompt.ifBlank { stringResource(if (action.kind == RequiredAction.Approval) R.string.run_requires_approval else R.string.run_requires_clarification) })
+                    if (action.kind == RequiredAction.Approval && action.options.count { it != "deny" } > 1) {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            action.options.filter { it != "deny" }.forEach { choice ->
+                                AssistChip(
+                                    onClick = { viewModel.resolveRunAction(choice) },
+                                    label = { Text(stringResource(when (choice) {
+                                        "session" -> R.string.approval_session
+                                        "always" -> R.string.approval_always
+                                        else -> R.string.approval_once
+                                    })) },
+                                )
+                            }
+                        }
+                    }
+                    if (action.kind == RequiredAction.Clarification) {
+                        if (action.options.isNotEmpty()) {
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                action.options.forEach { choice ->
+                                    AssistChip(onClick = { clarification = choice }, label = { Text(choice) })
+                                }
+                            }
+                        }
+                        OutlinedTextField(
+                            value = clarification,
+                            onValueChange = { clarification = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.run_clarification_answer)) },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = action.kind == RequiredAction.Approval || clarification.isNotBlank(),
+                    onClick = { viewModel.resolveRunAction(if (action.kind == RequiredAction.Approval) action.options.firstOrNull() ?: "once" else clarification.trim()) },
+                ) { Text(stringResource(if (action.kind == RequiredAction.Approval) R.string.action_approve else R.string.action_send)) }
+            },
+            dismissButton = if (action.kind == RequiredAction.Approval) {
+                { TextButton(onClick = { viewModel.resolveRunAction(action.options.firstOrNull { it == "deny" } ?: "deny") }) { Text(stringResource(R.string.action_reject)) } }
+            } else null,
+        )
+    }
 
     // A run continues in Studio after the mobile stream is detached. Reload
     // the server history whenever the app returns to the foreground so a reply
@@ -1115,7 +1167,14 @@ private fun ConversationTopBar(state: UiState, profile: String, avatar: AvatarSp
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     ProfileAvatar(profile.ifBlank { "default" }, avatar, size = 27.dp)
-                    Text(state.openSession?.title ?: stringResource(R.string.action_new_chat), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                    Column {
+                        Text(state.openSession?.title ?: stringResource(R.string.action_new_chat), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            state.selectedRuntime.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         },
@@ -2366,6 +2425,14 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
 
             item {
                 StudioGroupedCard {
+                    StudioDestinationRow(
+                        icon = Icons.Filled.Psychology,
+                        color = Color(0xFF7A5CFF),
+                        title = stringResource(R.string.agent_runtimes_title),
+                        subtitle = stringResource(R.string.agent_runtimes_hub_note),
+                        onClick = { viewModel.openAgentRuntimes() },
+                    )
+                    StudioCardDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth().clickable { viewModel.openProfiles() }
                             .padding(horizontal = 16.dp, vertical = 15.dp),

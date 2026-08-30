@@ -198,6 +198,42 @@ class HermesApi(
         }.filter { it.name.isNotBlank() }
     }
 
+    /** GET /api/agents/status — the five runtimes owned by three Studio families. */
+    fun agentRuntimes(): List<AgentRuntimeStatus> {
+        val array = call("/api/agents/status").optJSONArray("agents") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val rawId = firstNonBlank(item, "id", "agent") ?: return@mapNotNull null
+            val id = when (rawId.lowercase()) {
+                "ekko" -> "ekko-agent"
+                "claude" -> "claude-code"
+                else -> rawId.lowercase()
+            }
+            val family = when (id) {
+                "hermes" -> "hermes"
+                "ekko-agent" -> "ekko"
+                else -> "coding"
+            }
+            AgentRuntimeStatus(
+                id = id,
+                family = family,
+                name = when (id) {
+                    "hermes" -> "Hermes"
+                    "ekko-agent" -> "Ekko"
+                    "claude-code" -> "Claude Code"
+                    "codex" -> "Codex"
+                    "pi" -> "Pi"
+                    else -> rawId
+                },
+                installed = item.optBoolean("installed", false),
+                source = item.optString("source").ifBlank { "not-installed" },
+                version = firstNonBlank(item, "version"),
+                path = firstNonBlank(item, "path"),
+                error = firstNonBlank(item, "error"),
+            )
+        }
+    }
+
     /** POST /api/hermes/sessions/{id}/rename */
     fun renameSession(sessionId: String, title: String) {
         call("/api/hermes/sessions/${enc(sessionId)}/rename", "POST", JSONObject().put("title", title))
@@ -509,6 +545,9 @@ class HermesApi(
                     "createdAt",
                 ),
                 profile = firstNonBlank(item, "profile"),
+                source = firstNonBlank(item, "source", "session_source") ?: "cli",
+                agentId = firstNonBlank(item, "coding_agent_id", "agent_id", "agent"),
+                agentMode = firstNonBlank(item, "mode", "coding_agent_mode"),
             )
         }
     }
@@ -1389,6 +1428,7 @@ class HermesApi(
         reasoningEffort: String? = null,
         model: String? = null,
         provider: String? = null,
+        runtime: AgentRuntimeSelection = AgentRuntimeSelection(),
     ): ChatReply {
         // Studio sends either a plain string or an array of content blocks; the
         // block form is what carries images and files.
@@ -1419,6 +1459,11 @@ class HermesApi(
         if (!reasoningEffort.isNullOrBlank()) body.put("reasoning_effort", reasoningEffort)
         if (!model.isNullOrBlank()) body.put("model", model)
         if (!provider.isNullOrBlank()) body.put("provider", provider)
+        if (!runtime.isHermes) {
+            body.put("source", "coding_agent")
+            body.put("coding_agent_id", runtime.codingAgentId)
+            body.put("mode", "global")
+        }
 
         val result = call("/api/chat-run/runs", "POST", body)
         val failure = result.optString("error").takeIf { it.isNotBlank() }
@@ -1666,6 +1711,9 @@ data class SessionSummary(
     val provider: String? = null,
     val updatedAt: String?,
     val profile: String? = null,
+    val source: String = "cli",
+    val agentId: String? = null,
+    val agentMode: String? = null,
 )
 
 data class ModelOption(

@@ -722,4 +722,22 @@
     <string name="insights_live_sessions">Live sessions</string>
     <string name="voice_stop_reply">Stop voice</string>
     <string name="voice_playback_failed">The voice reply could not be played. Check the TTS provider in Studio.</string>
+    <string name="agent_runtimes_title">Agents</string>
+    <string name="agent_runtimes_subtitle">Choose the runtime that owns this conversation. Studio organizes five agents into three clear families.</string>
+    <string name="agent_runtimes_hub_note">Hermes, Ekko, Claude Code, Codex and Pi</string>
+    <string name="agent_family_hermes">Hermes family</string>
+    <string name="agent_family_ekko">Ekko family</string>
+    <string name="agent_family_coding">Coding agents</string>
+    <string name="agent_runtime_ready">Ready</string>
+    <string name="agent_runtime_not_installed">Not installed</string>
+    <string name="agent_runtime_unavailable">Unavailable</string>
+    <string name="run_approval_title">Approval required</string>
+    <string name="run_clarification_title">Agent question</string>
+    <string name="run_clarification_answer">Your answer</string>
+    <string name="run_action_resuming">Resuming the agent…</string>
+    <string name="action_approve">Approve</string>
+    <string name="action_reject">Reject</string>
+    <string name="approval_once">Allow once</string>
+    <string name="approval_session">Allow for session</string>
+    <string name="approval_always">Always allow</string>
 </resources>

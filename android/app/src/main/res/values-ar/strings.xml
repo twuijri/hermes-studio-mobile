@@ -721,4 +721,22 @@
     <string name="insights_live_sessions">الجلسات النشطة</string>
     <string name="voice_stop_reply">إيقاف الصوت</string>
     <string name="voice_playback_failed">تعذّر تشغيل الرد الصوتي. تحقق من مزوّد TTS في الاستديو.</string>
+    <string name="agent_runtimes_title">الوكلاء</string>
+    <string name="agent_runtimes_subtitle">اختر الوكيل المسؤول عن هذه المحادثة. يرتّب الاستديو خمسة وكلاء ضمن ثلاث عائلات واضحة.</string>
+    <string name="agent_runtimes_hub_note">Hermes وEkko وClaude Code وCodex وPi</string>
+    <string name="agent_family_hermes">عائلة Hermes</string>
+    <string name="agent_family_ekko">عائلة Ekko</string>
+    <string name="agent_family_coding">وكلاء البرمجة</string>
+    <string name="agent_runtime_ready">جاهز</string>
+    <string name="agent_runtime_not_installed">غير مثبت</string>
+    <string name="agent_runtime_unavailable">غير متاح</string>
+    <string name="run_approval_title">تحتاج موافقتك</string>
+    <string name="run_clarification_title">سؤال من الوكيل</string>
+    <string name="run_clarification_answer">إجابتك</string>
+    <string name="run_action_resuming">جارٍ إكمال عمل الوكيل…</string>
+    <string name="action_approve">موافقة</string>
+    <string name="action_reject">رفض</string>
+    <string name="approval_once">سماح لمرة واحدة</string>
+    <string name="approval_session">سماح لهذه الجلسة</string>
+    <string name="approval_always">سماح دائم</string>
 </resources>

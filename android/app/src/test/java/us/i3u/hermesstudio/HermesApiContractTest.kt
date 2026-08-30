@@ -72,6 +72,37 @@ class HermesApiContractTest {
     }
 
     @Test
+    fun `v0712 agent inventory is grouped into canonical families`() {
+        enqueue(
+            """{"revision":4,"agents":[{"id":"hermes","installed":true,"source":"managed-runtime","version":"0.8"},{"id":"ekko-agent","installed":true,"source":"built-in","version":"0.7.12"},{"id":"claude-code","installed":false,"source":"not-installed"},{"id":"codex","installed":true,"source":"user-cli","version":"1.2"},{"id":"pi","installed":true,"source":"user-cli"}]}""",
+        )
+
+        val agents = api.agentRuntimes()
+
+        assertEquals(listOf("hermes", "ekko", "coding", "coding", "coding"), agents.map { it.family })
+        assertEquals("Ekko", agents[1].name)
+        assertFalse(agents[2].installed)
+        assertEquals("/api/agents/status", server.takeRequest().path)
+    }
+
+    @Test
+    fun `coding runtime uses canonical v0712 run fields`() {
+        enqueue("""{"ok":true,"output":"done","session_id":"coding-1"}""")
+
+        api.sendMessage(
+            profile = "default",
+            input = "fix this",
+            sessionId = "coding-1",
+            runtime = AgentRuntimeSelection("codex", "coding", "Codex"),
+        )
+
+        val body = JSONObject(server.takeRequest().body.readUtf8())
+        assertEquals("coding_agent", body.getString("source"))
+        assertEquals("codex", body.getString("coding_agent_id"))
+        assertEquals("global", body.getString("mode"))
+    }
+
+    @Test
     fun `conversation history keeps the numeric Studio message timestamp`() {
         enqueue(
             """

@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 enum class Screen {
     Loading, Onboarding, Login, Chats, Groups, AgentHub, Conversation, Room, Profiles,
     Settings, MoreSettings, SettingsGroup, Channels, Channel, CronJobs, CronJob, CronHistory,
-    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights,
+    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes,
 }
 
 /** Settings is a short list of these; each opens its own screen. */
@@ -69,6 +69,14 @@ data class ChatToolStep(
     val status: ToolRunStatus,
     val startedAtMillis: Long,
     val durationSeconds: Double? = null,
+)
+
+data class PendingRunAction(
+    val kind: RequiredAction,
+    val id: String,
+    val prompt: String,
+    val options: List<String>,
+    val sessionId: String,
 )
 
 data class UiState(
@@ -168,6 +176,10 @@ data class UiState(
     val runtimePerformance: RuntimePerformance? = null,
     val loadingInsights: Boolean = false,
     val notice: String? = null,
+    val agentRuntimes: List<AgentRuntimeStatus> = emptyList(),
+    val loadingAgentRuntimes: Boolean = false,
+    val selectedRuntime: AgentRuntimeSelection = AgentRuntimeSelection(),
+    val pendingRunAction: PendingRunAction? = null,
 )
 
 data class WeixinQrUi(
@@ -416,6 +428,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             ?: _state.value.activeProfile.ifBlank { "default" }
         store.setSessionFor(profile, session.id)
         _state.update {
+            val runtime = runtimeForSession(session)
             it.copy(
                 screen = Screen.Conversation,
                 openSession = session,
@@ -431,6 +444,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 loadingHistory = true,
                 error = null,
                 notice = null,
+                selectedRuntime = runtime,
+                pendingRunAction = null,
             )
         }
 
@@ -522,7 +537,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun startNewConversation() {
+    fun startNewConversation(runtime: AgentRuntimeSelection = AgentRuntimeSelection()) {
         cancelActiveRun(abort = false)
         historyJob?.cancel()
         historyJob = null
@@ -543,8 +558,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 modelsProfile = it.modelsProfile.takeIf { loaded -> loaded == profile },
                 error = null,
                 notice = null,
+                selectedRuntime = runtime,
+                pendingRunAction = null,
             )
         }
+    }
+
+    fun openAgentRuntimes() {
+        _state.update { it.copy(screen = Screen.AgentRuntimes, loadingAgentRuntimes = true, error = null) }
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { api.agentRuntimes() } }
+                .onSuccess { runtimes -> _state.update { it.copy(agentRuntimes = runtimes, loadingAgentRuntimes = false) } }
+                .onFailure { failure ->
+                    _state.update { it.copy(loadingAgentRuntimes = false, error = failure.readableMessage(localized)) }
+                }
+        }
+    }
+
+    fun startRuntimeConversation(runtime: AgentRuntimeStatus) {
+        if (!runtime.installed) return
+        startNewConversation(AgentRuntimeSelection(runtime.id, runtime.family, runtime.name))
     }
 
     /** Sends a generated Studio file to Android's public Downloads folder. */
@@ -652,6 +685,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     reasoningEffort = reasoningEffort,
                     model = selectedModel,
                     provider = selectedProvider,
+                    runtime = _state.value.selectedRuntime,
                 )
                     .collect { event ->
                         when (event) {
@@ -699,17 +733,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 if (streamed) {
                                     updateLastReply(answer.toString(), thinking.toString(), streaming = false)
                                 }
-                                val actionNotice = str(
-                                    when (event.kind) {
-                                        RequiredAction.Approval -> R.string.run_requires_approval
-                                        RequiredAction.Clarification -> R.string.run_requires_clarification
-                                    },
-                                )
                                 _state.update {
-                                    it.copy(lines = it.lines + ChatLine(actionNotice, fromUser = false, isError = true))
+                                    it.copy(
+                                        pendingRunAction = PendingRunAction(event.kind, event.id, event.prompt, event.options, sessionId),
+                                        activity = null,
+                                    )
                                 }
-                                // This is a valid run state, not a transport
-                                // failure. Never submit the same turn over REST.
                                 streamed = true
                             }
                             is RunEvent.Failed -> {
@@ -740,6 +769,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         reasoningEffort = reasoningEffort,
                         model = selectedModel,
                         provider = selectedProvider,
+                        runtime = _state.value.selectedRuntime,
                         speakReply = wantsVoiceReply,
                     )
                     finishRun(sessionId)
@@ -756,6 +786,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun resolveRunAction(response: String) {
+        val action = _state.value.pendingRunAction ?: return
+        if (response.isBlank()) return
+        when (action.kind) {
+            RequiredAction.Approval -> chat.respondToApproval(action.sessionId, action.id, response)
+            RequiredAction.Clarification -> chat.respondToClarification(action.sessionId, action.id, response)
+        }
+        _state.update { it.copy(pendingRunAction = null, activity = str(R.string.run_action_resuming)) }
+    }
+
     /** Older servers, or a blocked WebSocket, still answer over plain HTTP. */
     private suspend fun sendOverRest(
         profile: String,
@@ -765,6 +805,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         reasoningEffort: String?,
         model: String?,
         provider: String?,
+        runtime: AgentRuntimeSelection,
         speakReply: Boolean = false,
     ) {
         runCatching {
@@ -777,6 +818,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     reasoningEffort = reasoningEffort,
                     model = model,
                     provider = provider,
+                    runtime = runtime,
                 )
             }
         }.onSuccess { reply ->
@@ -801,6 +843,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    private fun runtimeForSession(session: SessionSummary): AgentRuntimeSelection {
+        val id = when (session.agentId?.lowercase()) {
+            "ekko", "ekko-agent" -> "ekko-agent"
+            "claude", "claude-code" -> "claude-code"
+            "codex" -> "codex"
+            "pi" -> "pi"
+            else -> "hermes"
+        }
+        val family = when (id) { "hermes" -> "hermes"; "ekko-agent" -> "ekko"; else -> "coding" }
+        val name = when (id) { "hermes" -> "Hermes"; "ekko-agent" -> "Ekko"; "claude-code" -> "Claude Code"; "codex" -> "Codex"; else -> "Pi" }
+        return AgentRuntimeSelection(id, family, name)
     }
 
     private fun updateLastReply(
@@ -2706,7 +2761,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Screen.CronJob, Screen.CronHistory -> Screen.CronJobs
                 Screen.KanbanTask -> Screen.Kanban
                 Screen.Skill -> Screen.Skills
-                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights -> Screen.AgentHub
+                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes -> Screen.AgentHub
                 Screen.Channels, Screen.SettingsGroup, Screen.CronJobs -> state.toolReturnScreen
                 Screen.Profiles -> state.profilesReturnScreen
                 Screen.MoreSettings -> Screen.Settings

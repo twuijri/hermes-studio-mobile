@@ -142,6 +142,32 @@ data class PendingSkillWrite(
     val createdAt: Long?,
 )
 
+/** Canonical runtime inventory introduced by Studio 0.7.x. */
+data class AgentRuntimeStatus(
+    val id: String,
+    val family: String,
+    val name: String,
+    val installed: Boolean,
+    val source: String,
+    val version: String?,
+    val path: String?,
+    val error: String?,
+)
+
+data class AgentRuntimeSelection(
+    val id: String = "hermes",
+    val family: String = "hermes",
+    val name: String = "Hermes",
+) {
+    val isHermes: Boolean get() = id == "hermes"
+    val codingAgentId: String? get() = when (id) {
+        "ekko", "ekko-agent" -> "ekko-agent"
+        "claude", "claude-code" -> "claude-code"
+        "codex", "pi" -> id
+        else -> null
+    }
+}
+
 data class PluginsUiState(
     val loading: Boolean = false,
     val actionKey: String? = null,

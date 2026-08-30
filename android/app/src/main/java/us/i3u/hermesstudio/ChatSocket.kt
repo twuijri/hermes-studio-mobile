@@ -27,7 +27,12 @@ sealed interface RunEvent {
     ) : RunEvent
     data class Usage(val contextTokens: Long, val contextWindow: Long?) : RunEvent
     data class Done(val output: String, val reasoning: String) : RunEvent
-    data class RequiresAction(val kind: RequiredAction) : RunEvent
+    data class RequiresAction(
+        val kind: RequiredAction,
+        val id: String,
+        val prompt: String,
+        val options: List<String> = emptyList(),
+    ) : RunEvent
     data class Failed(val error: String, val retryableTransport: Boolean) : RunEvent
 }
 
@@ -59,6 +64,14 @@ class ChatSocket(
         runCatching { socket?.emit("abort", JSONObject().put("session_id", sessionId)) }
     }
 
+    fun respondToApproval(sessionId: String, approvalId: String, choice: String) {
+        socket?.emit("approval.respond", JSONObject().put("session_id", sessionId).put("approval_id", approvalId).put("choice", choice))
+    }
+
+    fun respondToClarification(sessionId: String, clarifyId: String, response: String) {
+        socket?.emit("clarify.respond", JSONObject().put("session_id", sessionId).put("clarify_id", clarifyId).put("response", response))
+    }
+
     fun run(
         profile: String,
         sessionId: String,
@@ -67,6 +80,7 @@ class ChatSocket(
         reasoningEffort: String?,
         model: String?,
         provider: String?,
+        runtime: AgentRuntimeSelection = AgentRuntimeSelection(),
     ): Flow<RunEvent> = callbackFlow {
         val payload = JSONObject()
             .put("input", contentFor(input, attachments))
@@ -75,6 +89,11 @@ class ChatSocket(
         if (!reasoningEffort.isNullOrBlank()) payload.put("reasoning_effort", reasoningEffort)
         if (!model.isNullOrBlank()) payload.put("model", model)
         if (!provider.isNullOrBlank()) payload.put("provider", provider)
+        if (!runtime.isHermes) {
+            payload.put("source", "coding_agent")
+            payload.put("coding_agent_id", runtime.codingAgentId)
+            payload.put("mode", "global")
+        }
 
         val options = IO.Options.builder()
             .setForceNew(true)
@@ -192,15 +211,29 @@ class ChatSocket(
         }
         // A run that needs a human decision cannot be answered from here yet, so
         // it is reported rather than left hanging.
-        live.on("approval.requested") {
-            terminal = true
-            trySend(RunEvent.RequiresAction(RequiredAction.Approval))
-            close()
+        live.on("approval.requested") { args ->
+            val event = eventPayload(args) ?: JSONObject()
+            val options = (event.optJSONArray("choices") ?: event.optJSONArray("options"))?.let { array ->
+                (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+            }.orEmpty()
+            trySend(RunEvent.RequiresAction(
+                RequiredAction.Approval,
+                event.firstString("approval_id", "id"),
+                event.firstString("description", "command", "prompt", "message"),
+                options,
+            ))
         }
-        live.on("clarify.requested") {
-            terminal = true
-            trySend(RunEvent.RequiresAction(RequiredAction.Clarification))
-            close()
+        live.on("clarify.requested") { args ->
+            val event = eventPayload(args) ?: JSONObject()
+            val options = (event.optJSONArray("choices") ?: event.optJSONArray("options"))?.let { array ->
+                (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+            }.orEmpty()
+            trySend(RunEvent.RequiresAction(
+                RequiredAction.Clarification,
+                event.firstString("clarify_id", "id"),
+                event.firstString("prompt", "question", "message"),
+                options,
+            ))
         }
         live.on(Socket.EVENT_CONNECT_ERROR) { args ->
             // Before the first successful connection REST is the safe fallback.
