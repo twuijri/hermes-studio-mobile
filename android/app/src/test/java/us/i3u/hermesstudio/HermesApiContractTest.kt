@@ -134,6 +134,35 @@ class HermesApiContractTest {
     }
 
     @Test
+    fun `Ekko memory revision and MCP tests use owned APIs`() {
+        enqueue("""{"ok":true,"memories":[{"id":"m1","title":"Preference","content":"Arabic","status":"active","revision":4,"tags":["user"]}]}""")
+        val memory = api.ekkoMemories("manager").single()
+        assertEquals(4, memory.revision)
+        assertEquals("manager", server.takeRequest().getHeader("X-Hermes-Profile"))
+
+        enqueue("""{"ok":true}""")
+        api.deleteEkkoMemory("manager", memory)
+        val deletion = server.takeRequest()
+        assertEquals("DELETE", deletion.method)
+        assertEquals(4, JSONObject(deletion.body.readUtf8()).getInt("expectedRevision"))
+
+        enqueue("""{"ok":true,"tools":[]}""")
+        api.testEkkoMcpServer("manager", "filesystem")
+        assertEquals("/api/ekko/mcp/servers/filesystem/test", server.takeRequest().path)
+    }
+
+    @Test
+    fun `profile restart and provider refresh use current Studio endpoints`() {
+        enqueue("""{"success":true}""")
+        api.restartProfileRuntime("manager")
+        assertEquals("/api/hermes/profiles/manager/restart", server.takeRequest().path)
+
+        enqueue("""{"ok":true}""")
+        api.refreshProviderModels("manager", "openrouter")
+        assertEquals("/api/hermes/config/providers/openrouter/models/refresh?profile=manager", server.takeRequest().path)
+    }
+
+    @Test
     fun `conversation history keeps the numeric Studio message timestamp`() {
         enqueue(
             """

@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 enum class Screen {
     Loading, Onboarding, Login, Chats, Groups, AgentHub, Conversation, Room, Profiles,
     Settings, MoreSettings, SettingsGroup, Channels, Channel, CronJobs, CronJob, CronHistory,
-    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes, Workflows, GlobalAgent,
+    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes, Workflows, GlobalAgent, EkkoHub,
 }
 
 /** Settings is a short list of these; each opens its own screen. */
@@ -185,6 +185,11 @@ data class UiState(
     val workflows: List<StudioWorkflow> = emptyList(),
     val workflowRuns: Map<String, List<StudioWorkflowRun>> = emptyMap(),
     val loadingWorkflows: Boolean = false,
+    val ekkoMemories: List<EkkoMemory> = emptyList(),
+    val ekkoSkills: List<SkillCategory> = emptyList(),
+    val ekkoMcpServers: List<EkkoMcpServer> = emptyList(),
+    val loadingEkko: Boolean = false,
+    val profileRuntimeStatuses: Map<String, String> = emptyMap(),
 )
 
 data class WeixinQrUi(
@@ -438,6 +443,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openGlobalAgent() = _state.update { it.copy(screen = Screen.GlobalAgent, error = null) }
 
+    fun openEkkoHub() {
+        _state.update { it.copy(screen = Screen.EkkoHub, loadingEkko = true, error = null) }
+        val profile = currentProfile()
+        viewModelScope.launch {
+            val memory = runCatching { withContext(Dispatchers.IO) { api.ekkoMemories(profile) } }
+            val skills = runCatching { withContext(Dispatchers.IO) { api.ekkoSkills(profile) } }
+            val mcp = runCatching { withContext(Dispatchers.IO) { api.ekkoMcpServers(profile) } }
+            val error = memory.exceptionOrNull() ?: skills.exceptionOrNull() ?: mcp.exceptionOrNull()
+            _state.update { it.copy(ekkoMemories = memory.getOrDefault(emptyList()), ekkoSkills = skills.getOrDefault(emptyList()), ekkoMcpServers = mcp.getOrDefault(emptyList()), loadingEkko = false, error = error?.readableMessage(localized)) }
+        }
+    }
+
+    fun saveEkkoMemory(memory: EkkoMemory, title: String, content: String) = launchWork(work = { api.updateEkkoMemory(currentProfile(), memory, title, content) }, onSuccess = { openEkkoHub() })
+    fun deleteEkkoMemory(memory: EkkoMemory) = launchWork(work = { api.deleteEkkoMemory(currentProfile(), memory) }, onSuccess = { openEkkoHub() })
+    fun toggleEkkoSkill(skill: SkillInfo) = launchWork(work = { api.setEkkoSkillEnabled(currentProfile(), skill.name, !skill.enabled) }, onSuccess = { openEkkoHub() })
+    fun saveEkkoMcp(original: String?, name: String, config: String) = launchWork(work = { api.saveEkkoMcpServer(currentProfile(), original, name, config) }, onSuccess = { openEkkoHub() })
+    fun toggleEkkoMcp(server: EkkoMcpServer) = launchWork(work = { api.toggleEkkoMcpServer(currentProfile(), server) }, onSuccess = { openEkkoHub() })
+    fun testEkkoMcp(server: EkkoMcpServer) = launchWork(work = { api.testEkkoMcpServer(currentProfile(), server.name) }, onSuccess = { _state.update { it.copy(notice = str(R.string.ekko_mcp_test_ok)) } })
+    fun deleteEkkoMcp(server: EkkoMcpServer) = launchWork(work = { api.deleteEkkoMcpServer(currentProfile(), server.name) }, onSuccess = { openEkkoHub() })
+
+    fun restartProfile(profile: String) = launchWork(work = { api.restartProfileRuntime(profile) }, onSuccess = { refreshProfiles(); _state.update { it.copy(notice = str(R.string.profile_restarted)) } })
+    fun refreshProviderModels(provider: String) = launchWork(work = { api.refreshProviderModels(currentProfile(), provider) }, onSuccess = { loadModelProviders(); _state.update { it.copy(notice = str(R.string.models_refreshed)) } })
+    fun testProvider(provider: String) = launchWork(work = { api.testProvider(currentProfile(), provider) }, onSuccess = { result -> _state.update { it.copy(notice = result) } })
+
     fun startGlobalAgentConversation() {
         startNewConversation(AgentRuntimeSelection("ekko-agent", "ekko", "Global Agent", globalAgent = true))
     }
@@ -453,9 +482,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshProfiles() = launchWork(
-        work = { api.profiles() },
-        onSuccess = { profiles ->
-            _state.update { it.copy(profiles = profiles, activeProfile = pickProfile(profiles)) }
+        work = { api.profiles() to runCatching { api.profileRuntimeStatuses() }.getOrDefault(emptyMap()) },
+        onSuccess = { (profiles, statuses) ->
+            _state.update { it.copy(profiles = profiles, activeProfile = pickProfile(profiles), profileRuntimeStatuses = statuses) }
         },
     )
 
@@ -2828,7 +2857,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Screen.CronJob, Screen.CronHistory -> Screen.CronJobs
                 Screen.KanbanTask -> Screen.Kanban
                 Screen.Skill -> Screen.Skills
-                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent -> Screen.AgentHub
+                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub -> Screen.AgentHub
                 Screen.Channels, Screen.SettingsGroup, Screen.CronJobs -> state.toolReturnScreen
                 Screen.Profiles -> state.profilesReturnScreen
                 Screen.MoreSettings -> Screen.Settings

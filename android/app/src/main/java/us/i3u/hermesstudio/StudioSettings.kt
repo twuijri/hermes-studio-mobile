@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,6 +53,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -501,6 +503,10 @@ internal fun ModelProvidersSettings(state: UiState, viewModel: AppViewModel) {
                     enabled = (key.isNotBlank() || (!provider.builtin && provider.configured)) && !state.savingSetting,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(stringResource(R.string.action_save)) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { viewModel.testProvider(provider.id) }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_test)) }
+                    OutlinedButton(onClick = { viewModel.refreshProviderModels(provider.id) }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.models_refresh)) }
+                }
             }
         }
     }

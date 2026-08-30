@@ -265,7 +265,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Conversation, Screen.Room, Screen.Profiles, Screen.Settings,
         Screen.MoreSettings, Screen.SettingsGroup, Screen.Channels, Screen.Channel, Screen.CronJobs,
         Screen.CronJob, Screen.CronHistory, Screen.Kanban, Screen.KanbanTask, Screen.Skills,
-        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent,
+        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub,
         -> BackHandler { viewModel.back() }
         Screen.Groups, Screen.AgentHub -> BackHandler { viewModel.showTab(Tab.Chats) }
         else -> Unit
@@ -302,6 +302,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.AgentRuntimes -> AgentRuntimeScreen(state, viewModel)
         Screen.Workflows -> WorkflowsScreen(state, viewModel)
         Screen.GlobalAgent -> GlobalAgentScreen(state, viewModel)
+        Screen.EkkoHub -> EkkoHubScreen(state, viewModel)
         Screen.Login -> LoginScreen(state, viewModel)
         Screen.Chats -> ChatsScreen(state, viewModel)
         Screen.Groups -> GroupsScreen(state, viewModel)
@@ -1554,6 +1555,9 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
                     confirmDelete = profile
                 },
             )
+            TextButton(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), onClick = { manage = null; viewModel.restartProfile(profile.name) }) {
+                Text(stringResource(R.string.profile_restart), Modifier.fillMaxWidth())
+            }
         }
     }
     rename?.let { profile ->
@@ -1653,6 +1657,9 @@ private fun ProfilesScreen(state: UiState, viewModel: AppViewModel) {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            state.profileRuntimeStatuses[profile.name]?.let { status ->
+                                Text(stringResource(R.string.profile_runtime_status, status), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
                         }
                         if (profile.name == state.activeProfile) {
                             Surface(
@@ -2557,6 +2564,13 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
                     StudioCardDivider()
                     StudioDestinationRow(Icons.Filled.Cable, Color(0xFF35B7DB), stringResource(R.string.agent_hub_mcp), stringResource(R.string.agent_hub_mcp_note), { viewModel.openMcp() })
                     StudioCardDivider()
+                }
+            }
+
+            item { StudioSectionTitle(stringResource(R.string.ekko_hub_title)) }
+            item {
+                StudioGroupedCard {
+                    StudioDestinationRow(Icons.Filled.Psychology, Color(0xFF2AAE88), stringResource(R.string.ekko_hub_title), stringResource(R.string.ekko_hub_note), { viewModel.openEkkoHub() })
                 }
             }
 

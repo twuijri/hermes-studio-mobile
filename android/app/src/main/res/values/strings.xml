@@ -763,4 +763,21 @@
     <string name="global_agent_remote_note">The conversation remains on Studio and can continue from another connected device.</string>
     <string name="action_stop">Stop</string>
     <string name="global_agent_sessions">Recent sessions</string>
+    <string name="ekko_hub_title">Ekko configuration</string>
+    <string name="ekko_hub_note">Memory, skills and MCP owned by Ekko</string>
+    <string name="ekko_memory_title">Memory</string>
+    <string name="ekko_memory_edit">Edit memory</string>
+    <string name="ekko_memory_name">Title</string>
+    <string name="ekko_memory_content">Content</string>
+    <string name="ekko_skills_title">Skills</string>
+    <string name="ekko_mcp_title">MCP servers</string>
+    <string name="ekko_mcp_edit">MCP server</string>
+    <string name="ekko_mcp_test_ok">MCP connection succeeded</string>
+    <string name="profile_restart">Restart profile runtime</string>
+    <string name="profile_restarted">Profile runtime restarted</string>
+    <string name="models_refresh">Refresh models</string>
+    <string name="models_refreshed">Provider models refreshed</string>
+    <string name="action_test">Test</string>
+    <string name="action_add">Add</string>
+    <string name="profile_runtime_status">Runtime: %1$s</string>
 </resources>

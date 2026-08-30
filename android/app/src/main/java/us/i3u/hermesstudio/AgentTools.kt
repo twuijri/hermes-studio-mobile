@@ -189,6 +189,9 @@ data class StudioWorkflowRun(
     val pendingNodeId: String?,
 )
 
+data class EkkoMemory(val id: String, val title: String, val content: String, val status: String, val revision: Int, val tags: List<String>)
+data class EkkoMcpServer(val name: String, val enabled: Boolean, val transport: String, val config: String)
+
 data class PluginsUiState(
     val loading: Boolean = false,
     val actionKey: String? = null,

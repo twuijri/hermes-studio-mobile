@@ -44,7 +44,7 @@ class HermesApi(
             "POST" -> builder.post((body ?: JSONObject()).toString().toRequestBody(json))
             "PUT" -> builder.put((body ?: JSONObject()).toString().toRequestBody(json))
             "PATCH" -> builder.patch((body ?: JSONObject()).toString().toRequestBody(json))
-            "DELETE" -> builder.delete()
+            "DELETE" -> if (body == null) builder.delete() else builder.delete(body.toString().toRequestBody(json))
             else -> builder.get()
         }
         return builder.build()
@@ -196,6 +196,21 @@ class HermesApi(
                 avatar = AvatarSpec.from(item.optJSONObject("avatar")),
             )
         }.filter { it.name.isNotBlank() }
+    }
+
+    fun profileRuntimeStatuses(): Map<String, String> {
+        val array = call("/api/hermes/profiles/runtime-statuses?refresh=true").optJSONArray("profiles") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item ->
+            val name = item.optString("name").ifBlank { item.optString("profile") }
+            val gateway = item.optJSONObject("gateway")
+            val bridge = item.optJSONObject("bridge")
+            val label = when {
+                gateway?.optBoolean("running") == true || bridge?.optBoolean("running") == true -> "running"
+                firstNonBlank(item, "error") != null -> "error"
+                else -> "stopped"
+            }
+            name.takeIf(String::isNotBlank)?.let { it to label }
+        } }.toMap()
     }
 
     /** GET /api/agents/status — the five runtimes owned by three Studio families. */
@@ -686,6 +701,62 @@ class HermesApi(
     fun restartGateway(profile: String) {
         call("/api/hermes/profiles/${enc(profile)}/gateway/restart", "POST", JSONObject())
     }
+
+    fun restartProfileRuntime(profile: String) { call("/api/hermes/profiles/${enc(profile)}/restart", "POST", JSONObject()) }
+
+    fun refreshProviderModels(profile: String, provider: String) {
+        call("/api/hermes/config/providers/${enc(provider)}/models/refresh?profile=${enc(profile)}", "POST", JSONObject(), profile)
+    }
+
+    fun testProvider(profile: String, provider: String): String {
+        val result = call("/api/hermes/config/providers/${enc(provider)}/editor/test?profile=${enc(profile)}", "POST", JSONObject(), profile)
+        return firstNonBlank(result, "message", "status") ?: "OK"
+    }
+
+    fun ekkoMemories(profile: String): List<EkkoMemory> {
+        val array = call("/api/ekko/memory?limit=200", profile = profile).optJSONArray("memories") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item ->
+            EkkoMemory(item.optString("id"), item.optString("title"), item.optString("content"), item.optString("status"), item.optInt("revision", 1), strings(item.optJSONArray("tags")))
+        } }.filter { it.id.isNotBlank() }
+    }
+
+    fun updateEkkoMemory(profile: String, memory: EkkoMemory, title: String, content: String) {
+        call("/api/ekko/memory/${enc(memory.id)}", "PATCH", JSONObject().put("expectedRevision", memory.revision).put("title", title).put("content", content).put("tags", JSONArray(memory.tags)), profile)
+    }
+
+    fun deleteEkkoMemory(profile: String, memory: EkkoMemory) {
+        call("/api/ekko/memory/${enc(memory.id)}", "DELETE", JSONObject().put("expectedRevision", memory.revision), profile)
+    }
+
+    fun ekkoSkills(profile: String): List<SkillCategory> {
+        val array = call("/api/ekko/skills", profile = profile).optJSONArray("skills") ?: JSONArray()
+        val skills = (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item ->
+            SkillInfo(item.optString("name"), item.optString("description"), item.optBoolean("enabled", true), item.optString("source"), false, 0)
+        } }.filter { it.name.isNotBlank() }
+        return skills.groupBy { it.source.ifBlank { "Ekko" } }.map { (name, values) -> SkillCategory(name, "", values) }
+    }
+
+    fun setEkkoSkillEnabled(profile: String, name: String, enabled: Boolean) {
+        call("/api/ekko/skills/${enc(name)}/toggle", "PUT", JSONObject().put("enabled", enabled), profile)
+    }
+
+    fun ekkoMcpServers(profile: String): List<EkkoMcpServer> {
+        val array = call("/api/ekko/mcp/servers", profile = profile).optJSONArray("servers") ?: JSONArray()
+        return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { item ->
+            val config = item.optJSONObject("config") ?: JSONObject()
+            EkkoMcpServer(item.optString("name"), item.optBoolean("enabled", true), config.optString("transport", "stdio"), config.toString(2))
+        } }.filter { it.name.isNotBlank() }
+    }
+
+    fun saveEkkoMcpServer(profile: String, original: String?, name: String, configText: String) {
+        val config = JSONObject(configText)
+        if (original == null) call("/api/ekko/mcp/servers", "POST", JSONObject().put("name", name).put("config", config), profile)
+        else call("/api/ekko/mcp/servers/${enc(original)}", "PATCH", JSONObject().put("config", config), profile)
+    }
+
+    fun toggleEkkoMcpServer(profile: String, server: EkkoMcpServer) { call("/api/ekko/mcp/servers/${enc(server.name)}", "PATCH", JSONObject().put("enabled", !server.enabled), profile) }
+    fun testEkkoMcpServer(profile: String, name: String) { call("/api/ekko/mcp/servers/${enc(name)}/test", "POST", JSONObject(), profile) }
+    fun deleteEkkoMcpServer(profile: String, name: String) { call("/api/ekko/mcp/servers/${enc(name)}", "DELETE", profile = profile) }
 
     /** POST /api/hermes/sessions/{id}/model */
     fun setSessionModel(sessionId: String, model: String, provider: String?) {

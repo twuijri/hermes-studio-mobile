@@ -762,4 +762,21 @@
     <string name="global_agent_remote_note">تبقى المحادثة في الاستديو ويمكن متابعتها من جهاز آخر متصل.</string>
     <string name="action_stop">إيقاف</string>
     <string name="global_agent_sessions">الجلسات الأخيرة</string>
+    <string name="ekko_hub_title">إعدادات Ekko</string>
+    <string name="ekko_hub_note">الذاكرة والمهارات وخوادم MCP الخاصة بـ Ekko</string>
+    <string name="ekko_memory_title">الذاكرة</string>
+    <string name="ekko_memory_edit">تعديل الذاكرة</string>
+    <string name="ekko_memory_name">العنوان</string>
+    <string name="ekko_memory_content">المحتوى</string>
+    <string name="ekko_skills_title">المهارات</string>
+    <string name="ekko_mcp_title">خوادم MCP</string>
+    <string name="ekko_mcp_edit">خادم MCP</string>
+    <string name="ekko_mcp_test_ok">نجح الاتصال بخادم MCP</string>
+    <string name="profile_restart">إعادة تشغيل محرك البروفايل</string>
+    <string name="profile_restarted">تمت إعادة تشغيل محرك البروفايل</string>
+    <string name="models_refresh">تحديث الموديلات</string>
+    <string name="models_refreshed">تم تحديث موديلات المزوّد</string>
+    <string name="action_test">اختبار</string>
+    <string name="action_add">إضافة</string>
+    <string name="profile_runtime_status">حالة المحرك: %1$s</string>
 </resources>
