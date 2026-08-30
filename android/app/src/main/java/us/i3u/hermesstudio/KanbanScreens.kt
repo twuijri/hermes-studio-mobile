@@ -436,6 +436,21 @@ internal fun KanbanTaskScreen(state: UiState, viewModel: AppViewModel) {
                         }
                     }
                 }
+                item {
+                    ToolSectionCard(stringResource(R.string.kanban_operations)) {
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            AssistChip({ viewModel.kanbanCommand(task, "dispatch") }, { Text(stringResource(R.string.kanban_dispatch)) })
+                            AssistChip({ viewModel.kanbanCommand(task, "complete", task.result.orEmpty()) }, { Text(stringResource(R.string.kanban_complete)) })
+                            AssistChip({ viewModel.kanbanCommand(task, "block", "Blocked from mobile") }, { Text(stringResource(R.string.block)) })
+                            AssistChip({ viewModel.kanbanCommand(task, "unblock") }, { Text(stringResource(R.string.unblock)) })
+                            task.assignee?.let { profile -> AssistChip({ viewModel.kanbanCommand(task, "reassign", profile) }, { Text(stringResource(R.string.kanban_reassign)) }) }
+                        }
+                        if (state.kanbanStats.isNotBlank()) Text(state.kanbanStats, style = MaterialTheme.typography.bodySmall)
+                        state.kanbanDiagnostics.forEach { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                        state.kanbanAttachments.forEach { Text("📎 $it", style = MaterialTheme.typography.bodySmall) }
+                        if (state.kanbanLog.isNotBlank()) Text(state.kanbanLog, maxLines = 12, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 detail.latestSummary?.let { summary ->
                     item { ToolSectionCard(stringResource(R.string.kanban_summary)) { Text(summary) } }
                 }

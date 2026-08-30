@@ -790,4 +790,10 @@
     <string name="ekko_skill_new">New Ekko skill</string>
     <string name="profile_import">Import profile</string><string name="profile_avatar">Choose profile avatar</string><string name="profile_avatar_clear">Remove profile avatar</string>
     <string name="profile_export_started">Profile export started</string><string name="ekko_external_dirs">External directories</string><string name="revoke_connection">Revoke app connection?</string><string name="manual_device">Add device manually</string><string name="block">Block</string><string name="unblock">Unblock</string>
+    <string name="name">Name</string>
+    <string name="journey_title">Journey</string><string name="journey_note">Skill and memory graph with usage</string>
+    <string name="webhooks_title">Webhooks</string><string name="webhooks_note">Delivery endpoints, tests, and local events</string><string name="webhooks_add">Add webhook</string><string name="clear_events">Clear events</string><string name="local_events">Local test events</string>
+    <string name="runtime_versions_title">Runtime versions</string><string name="runtime_versions_note">Install, activate, and restart managed runtimes</string><string name="restart_webui">Restart Web UI</string><string name="activate">Activate</string>
+    <string name="appearance_title">Appearance</string><string name="appearance_note">Studio colors, text, and background</string><string name="font_size">Font size</string><string name="text_color">Text color</string><string name="accent_color">Accent color</string><string name="remove_background">Remove background</string><string name="upload_background">Upload background</string>
+    <string name="kanban_operations">Operations and diagnostics</string><string name="kanban_dispatch">Dispatch</string><string name="kanban_complete">Complete</string><string name="kanban_reassign">Reassign</string>
 </resources>

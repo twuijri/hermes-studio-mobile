@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 enum class Screen {
     Loading, Onboarding, Login, Chats, Groups, AgentHub, Conversation, Room, Profiles,
     Settings, MoreSettings, SettingsGroup, Channels, Channel, CronJobs, CronJob, CronHistory,
-    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes, Workflows, GlobalAgent, EkkoHub, Files, Logs, Connections,
+    Kanban, KanbanTask, Skills, Skill, Plugins, Mcp, Pets, Insights, AgentRuntimes, Workflows, GlobalAgent, EkkoHub, Files, Logs, Connections, Journey, Webhooks, RuntimeVersions, Appearance,
 }
 
 /** Settings is a short list of these; each opens its own screen. */
@@ -209,6 +209,16 @@ data class UiState(
     val ekkoSkillFilePreviewContent: String = "",
     val pairingLink: String = "",
     val peerConnections: List<PeerConnection> = emptyList(),
+    val journey: JourneyGraph? = null,
+    val skillUsage: SkillUsage? = null,
+    val webhooks: List<WebhookEndpoint> = emptyList(),
+    val webhookEvents: List<String> = emptyList(),
+    val runtimeVersions: RuntimeVersions? = null,
+    val themeSettings: ThemeSettings? = null,
+    val kanbanDiagnostics: List<String> = emptyList(),
+    val kanbanStats: String = "",
+    val kanbanLog: String = "",
+    val kanbanAttachments: List<String> = emptyList(),
 )
 
 data class WeixinQrUi(
@@ -532,6 +542,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         getApplication<Application>().getSystemService(DownloadManager::class.java)?.enqueue(request)
         _state.update { it.copy(notice = str(R.string.profile_export_started)) }
     }
+
+    fun openJourney() = launchWork(work = { api.journey() to api.skillUsage() }, onSuccess = { (journey, usage) -> _state.update { it.copy(screen = Screen.Journey, journey = journey, skillUsage = usage) } })
+    fun openWebhooks() = launchWork(work = { api.webhooks() to api.webhookEvents() }, onSuccess = { (hooks, events) -> _state.update { it.copy(screen = Screen.Webhooks, webhooks = hooks, webhookEvents = events) } })
+    fun createWebhook(name: String, url: String) = launchWork(work = { api.createWebhook(name, url) }, onSuccess = { openWebhooks() })
+    fun toggleWebhook(item: WebhookEndpoint) = launchWork(work = { api.toggleWebhook(item) }, onSuccess = { openWebhooks() })
+    fun updateWebhook(item: WebhookEndpoint, name: String, url: String) = launchWork(work = { api.updateWebhook(item.id, name, url) }, onSuccess = { openWebhooks() })
+    fun deleteWebhook(item: WebhookEndpoint) = launchWork(work = { api.deleteWebhook(item.id) }, onSuccess = { openWebhooks() })
+    fun testWebhook(item: WebhookEndpoint) = launchWork(work = { api.testWebhook(item.id) }, onSuccess = { result -> _state.update { it.copy(notice = result) } })
+    fun clearWebhookEvents() = launchWork(work = { api.clearWebhookEvents() }, onSuccess = { openWebhooks() })
+    fun openRuntimeVersions() = launchWork(work = { api.runtimeVersions() }, onSuccess = { versions -> _state.update { it.copy(screen = Screen.RuntimeVersions, runtimeVersions = versions) } })
+    fun activateVersion(version: RuntimeVersion) = launchWork(work = { api.activateVersion(version.version, version.kind == "webui") }, onSuccess = { openRuntimeVersions() })
+    fun downloadVersion(version: String, webUi: Boolean) = launchWork(work = { api.downloadVersion(version, webUi) }, onSuccess = { openRuntimeVersions() })
+    fun restartWebUi() = launchWork(work = { api.restartWebUi() }, onSuccess = { openRuntimeVersions() })
+    fun openAppearance() = launchWork(work = { api.themeSettings() }, onSuccess = { theme -> _state.update { it.copy(screen = Screen.Appearance, themeSettings = theme) } })
+    fun saveTheme(fontSize: Int, text: String, accent: String) = launchWork(work = { api.updateTheme(fontSize, text, accent) }, onSuccess = { openAppearance() })
+    fun removeThemeBackground() = launchWork(work = { api.removeThemeBackground() }, onSuccess = { openAppearance() })
+    fun uploadThemeBackground(bytes: ByteArray, name: String, mime: String) = launchWork(work = { api.uploadThemeBackground(bytes, name, mime) }, onSuccess = { openAppearance() })
+    fun loadKanbanOperations(taskId: String? = null) { val board = _state.value.kanban.board; if (board.isBlank()) return; launchWork(work = { val diagnostics = api.kanbanDiagnostics(board, taskId); val stats = api.kanbanStats(board); val extras = taskId?.let { api.kanbanLog(board, it) to api.kanbanAttachments(board, it) } ?: ("" to emptyList()); Triple(stats, diagnostics, extras) }, onSuccess = { (stats, diagnostics, extras) -> _state.update { it.copy(kanbanStats = stats, kanbanDiagnostics = diagnostics, kanbanLog = extras.first, kanbanAttachments = extras.second) } }) }
+    fun kanbanCommand(task: KanbanTask, action: String, value: String = "") { val board = _state.value.kanban.board; launchWork(work = { api.kanbanCommand(board, task.id, action, value) }, onSuccess = { loadKanbanTask(task.id); loadKanbanOperations(task.id) }) }
 
     fun startGlobalAgentConversation() {
         startNewConversation(AgentRuntimeSelection("ekko-agent", "ekko", "Global Agent", globalAgent = true))
@@ -1654,6 +1683,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         loadKanbanTask(task.id)
+        loadKanbanOperations(task.id)
     }
 
     private fun loadKanbanTask(id: String) {
@@ -2923,7 +2953,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 Screen.CronJob, Screen.CronHistory -> Screen.CronJobs
                 Screen.KanbanTask -> Screen.Kanban
                 Screen.Skill -> Screen.Skills
-                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub, Screen.Files, Screen.Logs, Screen.Connections -> Screen.AgentHub
+                Screen.Kanban, Screen.Skills, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub, Screen.Files, Screen.Logs, Screen.Connections, Screen.Journey, Screen.Webhooks, Screen.RuntimeVersions, Screen.Appearance -> Screen.AgentHub
                 Screen.Channels, Screen.SettingsGroup, Screen.CronJobs -> state.toolReturnScreen
                 Screen.Profiles -> state.profilesReturnScreen
                 Screen.MoreSettings -> Screen.Settings

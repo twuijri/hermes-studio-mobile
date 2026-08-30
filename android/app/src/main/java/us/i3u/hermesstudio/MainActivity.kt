@@ -265,7 +265,7 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Conversation, Screen.Room, Screen.Profiles, Screen.Settings,
         Screen.MoreSettings, Screen.SettingsGroup, Screen.Channels, Screen.Channel, Screen.CronJobs,
         Screen.CronJob, Screen.CronHistory, Screen.Kanban, Screen.KanbanTask, Screen.Skills,
-        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub, Screen.Files, Screen.Logs, Screen.Connections,
+        Screen.Skill, Screen.Plugins, Screen.Mcp, Screen.Pets, Screen.Insights, Screen.AgentRuntimes, Screen.Workflows, Screen.GlobalAgent, Screen.EkkoHub, Screen.Files, Screen.Logs, Screen.Connections, Screen.Journey, Screen.Webhooks, Screen.RuntimeVersions, Screen.Appearance,
         -> BackHandler { viewModel.back() }
         Screen.Groups, Screen.AgentHub -> BackHandler { viewModel.showTab(Tab.Chats) }
         else -> Unit
@@ -306,6 +306,10 @@ private fun AppContent(state: UiState, viewModel: AppViewModel) {
         Screen.Files -> FilesScreen(state, viewModel)
         Screen.Logs -> LogsScreen(state, viewModel)
         Screen.Connections -> ConnectionsScreen(state, viewModel)
+        Screen.Journey -> JourneyScreen(state, viewModel)
+        Screen.Webhooks -> WebhooksScreen(state, viewModel)
+        Screen.RuntimeVersions -> RuntimeVersionsScreen(state, viewModel)
+        Screen.Appearance -> AppearanceScreen(state, viewModel)
         Screen.Login -> LoginScreen(state, viewModel)
         Screen.Chats -> ChatsScreen(state, viewModel)
         Screen.Groups -> GroupsScreen(state, viewModel)
@@ -2563,6 +2567,14 @@ private fun AgentHubScreen(state: UiState, viewModel: AppViewModel) {
                     StudioDestinationRow(Icons.Filled.History, Color(0xFF4D8DFF), stringResource(R.string.logs_title), stringResource(R.string.logs_hub_note), { viewModel.openLogs() })
                     StudioCardDivider()
                     StudioDestinationRow(Icons.Filled.Dns, Color(0xFF2AAE88), stringResource(R.string.connections_title), stringResource(R.string.connections_hub_note), { viewModel.openConnections() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.AccountTree, Color(0xFF35B7DB), stringResource(R.string.journey_title), stringResource(R.string.journey_note), { viewModel.openJourney() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Link, Color(0xFFFF9F43), stringResource(R.string.webhooks_title), stringResource(R.string.webhooks_note), { viewModel.openWebhooks() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.SystemUpdate, Color(0xFF45C878), stringResource(R.string.runtime_versions_title), stringResource(R.string.runtime_versions_note), { viewModel.openRuntimeVersions() })
+                    StudioCardDivider()
+                    StudioDestinationRow(Icons.Filled.Palette, Color(0xFFB45CFF), stringResource(R.string.appearance_title), stringResource(R.string.appearance_note), { viewModel.openAppearance() })
                 }
             }
 

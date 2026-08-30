@@ -200,6 +200,13 @@ data class AppConnection(val id: Int, val name: String, val type: String, val ac
 data class AppAuthorization(val code: String, val expiresAt: Long, val type: String, val qrPayload: String = code)
 data class EkkoSkillFile(val path: String, val content: String = "")
 data class PeerConnection(val id: String, val deviceId: String, val name: String)
+data class JourneyNode(val id: String, val label: String, val kind: String, val category: String, val uses: Int)
+data class JourneyGraph(val profile: String, val nodes: List<JourneyNode>, val edges: List<Pair<String, String>>, val clusters: List<Pair<String, Int>>)
+data class SkillUsage(val totalLoads: Int, val totalEdits: Int, val totalActions: Int, val distinctSkills: Int, val topSkills: List<Pair<String, Int>>)
+data class WebhookEndpoint(val id: String, val name: String, val url: String, val enabled: Boolean, val state: String, val delivered: Int, val failed: Int)
+data class RuntimeVersion(val version: String, val active: Boolean, val kind: String)
+data class RuntimeVersions(val platform: String, val activeRuntime: String, val activeWebUi: String, val runtime: List<RuntimeVersion>, val webUi: List<RuntimeVersion>, val remoteRuntime: List<String>, val remoteWebUi: List<String>)
+data class ThemeSettings(val fontSize: Int, val textColor: String, val accentColor: String, val backgroundName: String)
 
 data class PluginsUiState(
     val loading: Boolean = false,

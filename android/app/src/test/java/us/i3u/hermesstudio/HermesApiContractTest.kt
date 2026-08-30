@@ -234,6 +234,30 @@ class HermesApiContractTest {
         assertEquals("/api/devices/peer-connections/peer-1/disconnect", server.takeRequest().path)
     }
 
+    @Test fun `journey usage and webhooks use v0712 routes`() {
+        enqueue("""{"profile":"default","graph":{"nodes":[],"edges":[],"clusters":[]}}""")
+        assertEquals("default", api.journey().profile)
+        assertEquals("/api/hermes/journey", server.takeRequest().path)
+        enqueue("""{"summary":{"total_skill_loads":2,"total_skill_edits":1,"total_skill_actions":3,"distinct_skills_used":1},"top_skills":[]}""")
+        assertEquals(3, api.skillUsage(7).totalActions)
+        assertEquals("/api/hermes/skills/usage/stats?days=7", server.takeRequest().path)
+        enqueue("""{"ok":true}"""); api.createWebhook("Build", "https://example.test/hook")
+        assertEquals("/api/studio/webhooks/endpoints", server.takeRequest().path)
+    }
+
+    @Test fun `runtime theme and kanban operations use canonical routes`() {
+        enqueue("""{"platform":"linux","hermes":{"activeVersion":"1","installed":[],"remoteVersions":[]},"webui":{"activeVersion":"2","installed":[],"remoteVersions":[]}}""")
+        assertEquals("linux", api.runtimeVersions().platform)
+        assertEquals("/api/hermes/runtime-versions", server.takeRequest().path)
+        enqueue("""{"fontSize":17,"accentColor":"#ff0000"}""")
+        assertEquals(17, api.themeSettings().fontSize)
+        assertEquals("/api/theme", server.takeRequest().path)
+        enqueue("""{"ok":true}"""); api.kanbanCommand("main", "TASK-1", "block", "waiting")
+        val block = server.takeRequest()
+        assertEquals("/api/hermes/kanban/TASK-1/block?board=main", block.path)
+        assertEquals("waiting", JSONObject(block.body.readUtf8()).getString("reason"))
+    }
+
     @Test
     fun `conversation history keeps the numeric Studio message timestamp`() {
         enqueue(
