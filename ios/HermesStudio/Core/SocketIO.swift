@@ -115,7 +115,11 @@ final class ChatSocket: @unchecked Sendable {
             if let model, !model.isEmpty { payload["model"] = model }
             if let provider, !provider.isEmpty { payload["provider"] = provider }
             let canonicalAgent = AgentIdentity.canonicalID(agentID)
-            if canonicalAgent != "hermes" {
+            if source == "global_agent" {
+                payload["source"] = "global_agent"
+                payload["session_source"] = "global_agent"
+                payload["coding_agent_id"] = canonicalAgent
+            } else if canonicalAgent != "hermes" {
                 payload["source"] = "coding_agent"
                 payload["coding_agent_id"] = canonicalAgent
                 payload["mode"] = "scoped"

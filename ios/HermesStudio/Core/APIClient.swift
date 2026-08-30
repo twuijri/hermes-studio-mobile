@@ -124,10 +124,49 @@ final class APIClient: @unchecked Sendable {
 
     func sessions(profile: String? = nil) async throws -> [SessionSummary] {
         let fallbackProfile = profile?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return try await array(Self.sessionsPath(profile: profile), keys: ["sessions", "conversations"])
-            .map { SessionSummary($0, profile: fallbackProfile) }
-            .filter { !$0.id.isEmpty }
+        var canonical = "/api/studio/sessions?limit=100"
+        if !fallbackProfile.isEmpty { canonical += "&profile=\(fallbackProfile.urlEncoded)" }
+        do {
+            return try await array(canonical, keys: ["sessions"]).map { SessionSummary($0, profile: fallbackProfile) }.filter { !$0.id.isEmpty }
+        } catch {
+            return try await array(Self.sessionsPath(profile: profile), keys: ["sessions", "conversations"]).map { SessionSummary($0, profile: fallbackProfile) }.filter { !$0.id.isEmpty }
+        }
     }
+
+    func searchSessions(_ query: String, profile: String? = nil) async throws -> [SessionSummary] {
+        var path = "/api/studio/search/sessions?q=\(query.urlEncoded)&limit=100"
+        if let profile = profile?.nilIfEmpty { path += "&profile=\(profile.urlEncoded)" }
+        return try await array(path, keys: ["results"]).map { SessionSummary($0, profile: profile ?? "") }
+    }
+    func sessionSummary(_ id: String, profile: String? = nil) async throws -> SessionSummary {
+        let query = profile?.nilIfEmpty.map { "?profile=\($0.urlEncoded)" } ?? ""
+        let root = try await object("/api/studio/sessions/\(id.urlEncoded)\(query)")
+        return SessionSummary(root.object("session"), profile: profile ?? "")
+    }
+
+    func sessionCategories() async throws -> [SessionCategory] { try await array("/api/studio/session-categories", keys: ["categories"]).map(SessionCategory.init) }
+    func createSessionCategory(_ name: String) async throws -> SessionCategory { SessionCategory(try await object("/api/studio/session-categories", method: "POST", body: ["name": name]).object("category")) }
+    func renameSessionCategory(_ id: Int, name: String) async throws { _ = try await object("/api/studio/session-categories/\(id)", method: "PATCH", body: ["name": name]) }
+    func deleteSessionCategory(_ id: Int) async throws { _ = try await object("/api/studio/session-categories/\(id)", method: "DELETE") }
+    func setSessionCategory(_ id: String, categoryID: Int?) async throws {
+        let body: JSON = ["categoryId": categoryID.map { $0 as Any } ?? NSNull()]
+        _ = try await object("/api/studio/sessions/\(id.urlEncoded)/category", method: "POST", body: body)
+    }
+    func setSessionArchived(_ id: String, archived: Bool) async throws { _ = try await object("/api/studio/sessions/\(id.urlEncoded)/\(archived ? "archive" : "unarchive")", method: "POST") }
+
+    func workflows(profile: String? = nil) async throws -> [WorkflowItem] {
+        let query = profile?.nilIfEmpty.map { "?profile=\($0.urlEncoded)" } ?? ""
+        return try await array("/api/studio/workflows\(query)", keys: ["workflows"]).map(WorkflowItem.init)
+    }
+    func workflowRuns(_ id: String) async throws -> [WorkflowRun] { try await array("/api/studio/workflows/\(id.urlEncoded)/runs?limit=100", keys: ["runs"]).map(WorkflowRun.init) }
+    func runWorkflow(_ id: String, input: String?) async throws {
+        var body: JSON = [:]
+        if let input = input?.nilIfEmpty { body["input"] = input }
+        _ = try await object("/api/studio/workflows/\(id.urlEncoded)/run", method: "POST", body: body)
+    }
+    func stopWorkflow(_ id: String, runID: String) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)/stop", method: "POST") }
+    func deleteWorkflowRun(_ id: String, runID: String) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)", method: "DELETE") }
+    func approveWorkflowNode(_ id: String, runID: String, node: WorkflowRunNode, approved: Bool) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)/nodes/\(node.nodeID.urlEncoded)/approval", method: "POST", body: ["approved": approved, "executionId": node.executionID]) }
 
     func conversationHistory(sessionID: String) async throws -> (messages: [Message], contextTokens: Int?) {
         let path = "/api/hermes/sessions/conversations/\(sessionID.urlEncoded)/messages?humanOnly=true"

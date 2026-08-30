@@ -114,6 +114,10 @@ struct SessionSummary: Identifiable, Hashable {
     var profile: String
     var agentID: String
     var source: String
+    var categoryID: Int?
+    var archived: Bool
+    var preview: String
+    var messageCount: Int
 
     init(_ json: JSON, profile fallbackProfile: String = "") {
         id = json.string("id", "session_id", "sessionId")
@@ -124,9 +128,71 @@ struct SessionSummary: Identifiable, Hashable {
         profile = json.string("profile").nilIfEmpty ?? fallbackProfile
         agentID = json.string("agent", "agentId", "agent_id", "codingAgentId", "coding_agent_id").nilIfEmpty ?? "hermes"
         source = json.string("source", "sessionSource", "session_source")
+        let rawCategory = json["category_id"] ?? json["categoryId"]
+        categoryID = (rawCategory as? NSNumber)?.intValue ?? Int(String(describing: rawCategory ?? ""))
+        archived = json.bool("is_archived", "archived")
+        preview = json.string("preview", "last_message", "lastMessage")
+        messageCount = json.int("message_count", "messageCount")
     }
 
     var agentDisplayName: String { AgentIdentity.displayName(for: agentID) }
+}
+
+struct SessionCategory: Identifiable, Hashable {
+    let id: Int
+    var name: String
+    init(_ json: JSON) { id = json.int("id"); name = json.string("name") }
+}
+
+struct WorkflowItem: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var profile: String
+    var workspace: String
+    var nodeCount: Int
+    var updatedAt: Int64
+    init(_ json: JSON) {
+        id = json.string("id")
+        name = json.string("name").nilIfEmpty ?? String(localized: "Untitled workflow")
+        profile = json.string("profile")
+        workspace = json.string("workspace")
+        nodeCount = json.array("nodes").count
+        updatedAt = (json["updated_at"] as? NSNumber)?.int64Value ?? 0
+    }
+}
+
+struct WorkflowRun: Identifiable, Hashable {
+    let id: String
+    var workflowID: String
+    var status: String
+    var error: String
+    var createdAt: Int64
+    var nodes: [WorkflowRunNode]
+    init(_ json: JSON) {
+        id = json.string("id")
+        workflowID = json.string("workflow_id", "workflowId")
+        status = json.string("status")
+        error = json.string("error")
+        createdAt = (json["created_at"] as? NSNumber)?.int64Value ?? 0
+        nodes = json.objects("node_sessions").map(WorkflowRunNode.init)
+    }
+}
+
+struct WorkflowRunNode: Identifiable, Hashable {
+    let id: String
+    var nodeID: String
+    var agent: String
+    var status: String
+    var error: String
+    var executionID: String
+    init(_ json: JSON) {
+        id = json.string("id").nilIfEmpty ?? json.string("node_id")
+        nodeID = json.string("node_id", "nodeId")
+        agent = json.string("agent")
+        status = json.string("status")
+        error = json.string("error")
+        executionID = json.string("execution_id", "executionId")
+    }
 }
 
 enum AgentIdentity {

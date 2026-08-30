@@ -107,6 +107,21 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(status.version, "1.2.3")
     }
 
+    func testCanonicalSessionOrganizationFields() {
+        let session = SessionSummary(["id": "s2", "category_id": 7, "is_archived": 1, "preview": "matched text", "message_count": 12])
+        XCTAssertEqual(session.categoryID, 7)
+        XCTAssertTrue(session.archived)
+        XCTAssertEqual(session.preview, "matched text")
+        XCTAssertEqual(session.messageCount, 12)
+    }
+
+    func testWorkflowRunParsesBlockedApprovalNode() {
+        let run = WorkflowRun(["id": "r1", "workflow_id": "w1", "status": "running", "node_sessions": [["id": "n1", "node_id": "review", "status": "blocked", "agent": "codex", "execution_id": "e1"]]])
+        XCTAssertEqual(run.nodes.first?.status, "blocked")
+        XCTAssertEqual(run.nodes.first?.executionID, "e1")
+        XCTAssertEqual(run.nodes.first?.agent, "codex")
+    }
+
     func testMarkdownParsesArabicHeadingsListsAndInlineBold() throws {
         let source = "### البريد غير المقروء\n- **635** عاجلة وتتطلب إجراء.\n  - طلبات معلومات.\n\n1. **تنظيف البريد**"
         let blocks = ChatMarkdownParser.parse(source)

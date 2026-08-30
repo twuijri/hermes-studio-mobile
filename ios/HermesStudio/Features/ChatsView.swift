@@ -2,10 +2,14 @@ import SwiftUI
 
 struct ChatsView: View {
     @EnvironmentObject private var store: AppStore
+    @AppStorage("studioArchivedSessionIDs") private var archivedSessionIDs = ""
     @State private var sessions: [SessionSummary] = []
     @State private var search = ""
     @State private var profileFilter = ""
     @State private var agentFilter = ""
+    @State private var showArchived = false
+    @State private var categories: [SessionCategory] = []
+    @State private var managingCategories = false
     @State private var loading = true
     @State private var editSession: SessionSummary?
     @State private var newTitle = ""
@@ -45,13 +49,26 @@ struct ChatsView: View {
                         }
                         SearchBar(text: $search).listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden)
                     }
+                    if !categories.isEmpty {
+                        Section {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack { ForEach(categories) { category in Text(category.name).font(.caption.weight(.semibold)).padding(.horizontal, 10).padding(.vertical, 6).background(.thinMaterial, in: Capsule()) } }
+                            }
+                        }.listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    }
                     if filtered.isEmpty {
                         EmptyState(icon: "bubble.left.and.bubble.right", title: "No conversations", detail: "Start a conversation with your Hermes agent.")
                             .listRowBackground(Color.clear).listRowSeparator(.hidden)
                     }
                     ForEach(filtered) { session in
                         NavigationLink { ConversationView(session: session) } label: { SessionRow(session: session, profile: store.profiles.first { $0.name == session.profile } ?? store.profile) }
-                            .swipeActions(edge: .trailing) { Button(role: .destructive) { Task { await delete(session) } } label: { Label("Delete", systemImage: "trash") }; Button { newTitle = session.title; editSession = session } label: { Label("Rename", systemImage: "pencil") }.tint(.blue) }
+                            .swipeActions(edge: .trailing) { Button(role: .destructive) { Task { await delete(session) } } label: { Label("Delete", systemImage: "trash") }; Button { Task { await archive(session, archived: !session.archived) } } label: { Label(session.archived ? "Unarchive" : "Archive", systemImage: session.archived ? "tray.and.arrow.up" : "archivebox") }.tint(.orange); Button { newTitle = session.title; editSession = session } label: { Label("Rename", systemImage: "pencil") }.tint(.blue) }
+                            .contextMenu {
+                                Menu("Move to category") {
+                                    Button("No category") { Task { await assign(session, category: nil) } }
+                                    ForEach(categories) { category in Button(category.name) { Task { await assign(session, category: category.id) } } }
+                                }
+                            }
                     }
                 }.listStyle(.insetGrouped).refreshable { await load() }
             }
@@ -65,6 +82,8 @@ struct ChatsView: View {
                 ToolbarItem(placement: .topBarLeading) { ProfileMenu() }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showArchived.toggle() } label: { Image(systemName: showArchived ? "tray.full.fill" : "archivebox") }.accessibilityLabel(showArchived ? "Show active" : "Show archived")
+                Button { managingCategories = true } label: { Image(systemName: "folder.badge.gearshape") }.accessibilityLabel("Manage categories")
                 Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh")
                 Menu {
                     Section("Agent") {
@@ -75,7 +94,8 @@ struct ChatsView: View {
                 } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("New conversation")
             }
         }
-        .task(id: profileFilter) { await load() }
+        .task(id: "\(profileFilter)|\(search)|\(showArchived)") { if !search.isEmpty { try? await Task.sleep(for: .milliseconds(300)) }; guard !Task.isCancelled else { return }; await load() }
+        .sheet(isPresented: $managingCategories) { NavigationStack { SessionCategoriesView(categories: $categories) }.environmentObject(store) }
         .alert("Rename conversation", isPresented: Binding(get: { editSession != nil }, set: { if !$0 { editSession = nil } })) {
             TextField("Title", text: $newTitle)
             Button("Save") { guard let editSession else { return }; Task { try? await store.api.renameSession(editSession.id, title: newTitle); await load() } }
@@ -83,7 +103,7 @@ struct ChatsView: View {
         }
     }
 
-    private var filtered: [SessionSummary] { sessions.filter { session in (agentFilter.isEmpty || AgentIdentity.canonicalID(session.agentID) == agentFilter) && (search.isEmpty || session.title.localizedCaseInsensitiveContains(search) || session.model.localizedCaseInsensitiveContains(search) || session.agentDisplayName.localizedCaseInsensitiveContains(search)) } }
+    private var filtered: [SessionSummary] { sessions.filter { session in session.archived == showArchived && (agentFilter.isEmpty || AgentIdentity.canonicalID(session.agentID) == agentFilter) && (search.isEmpty || session.title.localizedCaseInsensitiveContains(search) || session.model.localizedCaseInsensitiveContains(search) || session.agentDisplayName.localizedCaseInsensitiveContains(search) || session.preview.localizedCaseInsensitiveContains(search)) } }
     private func newSession(agent: String) -> SessionSummary { SessionSummary(["id": UUID().uuidString, "title": String(localized: "New conversation"), "profile": store.selectedProfile, "agent": agent, "source": agent == "hermes" ? "cli" : "coding_agent"], profile: store.selectedProfile) }
     private func agentSymbol(_ id: String) -> String {
         switch AgentIdentity.canonicalID(id) {
@@ -94,8 +114,55 @@ struct ChatsView: View {
         default: return "bolt.horizontal.circle"
         }
     }
-    private func load() async { loading = true; do { sessions = try await store.api.sessions(profile: profileFilter.nilIfEmpty) } catch { store.errorMessage = error.localizedDescription }; loading = false }
+    private var archivedIDs: [String] { archivedSessionIDs.split(separator: "\n").map(String.init) }
+    private func load() async {
+        loading = true
+        do {
+            async let categoryRequest = store.api.sessionCategories()
+            if showArchived {
+                var archived: [SessionSummary] = []
+                for id in archivedIDs { if let item = try? await store.api.sessionSummary(id, profile: profileFilter.nilIfEmpty), item.archived { archived.append(item) } }
+                sessions = archived
+            } else if search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sessions = try await store.api.sessions(profile: profileFilter.nilIfEmpty) }
+            else { sessions = try await store.api.searchSessions(search, profile: profileFilter.nilIfEmpty) }
+            categories = try await categoryRequest
+        } catch { store.errorMessage = error.localizedDescription }
+        loading = false
+    }
     private func delete(_ session: SessionSummary) async { do { try await store.api.deleteSession(session.id); sessions.removeAll { $0.id == session.id } } catch { store.errorMessage = error.localizedDescription } }
+    private func archive(_ session: SessionSummary, archived: Bool) async {
+        do {
+            try await store.api.setSessionArchived(session.id, archived: archived)
+            var ids = Set(archivedIDs)
+            if archived { ids.insert(session.id) } else { ids.remove(session.id) }
+            archivedSessionIDs = ids.sorted().joined(separator: "\n")
+            sessions.removeAll { $0.id == session.id }
+        } catch { store.errorMessage = error.localizedDescription }
+    }
+    private func assign(_ session: SessionSummary, category: Int?) async { do { try await store.api.setSessionCategory(session.id, categoryID: category); await load() } catch { store.errorMessage = error.localizedDescription } }
+}
+
+private struct SessionCategoriesView: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    @Binding var categories: [SessionCategory]
+    @State private var newName = ""
+    @State private var editing: SessionCategory?
+    @State private var editName = ""
+    var body: some View {
+        List {
+            Section("New category") { HStack { TextField("Category name", text: $newName); Button("Add") { Task { await create() } }.disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
+            Section("Categories") {
+                ForEach(categories) { category in Button { editing = category; editName = category.name } label: { Label(category.name, systemImage: "folder.fill") }.foregroundStyle(.primary) }
+                    .onDelete { offsets in for index in offsets { Task { await remove(categories[index]) } } }
+            }
+        }.navigationTitle("Session categories").toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        .alert("Rename category", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) { TextField("Category name", text: $editName); Button("Save") { Task { await rename() } }; Button("Cancel", role: .cancel) {} }
+    }
+    private func refresh() async { categories = (try? await store.api.sessionCategories()) ?? categories }
+    private func create() async { do { _ = try await store.api.createSessionCategory(newName); newName = ""; await refresh() } catch { store.errorMessage = error.localizedDescription } }
+    private func rename() async { guard let editing else { return }; do { try await store.api.renameSessionCategory(editing.id, name: editName); self.editing = nil; await refresh() } catch { store.errorMessage = error.localizedDescription } }
+    private func remove(_ category: SessionCategory) async { do { try await store.api.deleteSessionCategory(category.id); await refresh() } catch { store.errorMessage = error.localizedDescription } }
 }
 
 private struct SessionRow: View {
