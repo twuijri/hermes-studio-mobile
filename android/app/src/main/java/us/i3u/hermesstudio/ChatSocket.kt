@@ -33,6 +33,9 @@ sealed interface RunEvent {
         val prompt: String,
         val options: List<String> = emptyList(),
     ) : RunEvent
+    data class ActionResolved(val kind: RequiredAction, val id: String, val resolved: Boolean) : RunEvent
+    data class QueueChanged(val messages: List<QueuedRun>?, val insertionActive: Boolean?) : RunEvent
+    data class BackgroundAgent(val task: BackgroundAgentRun) : RunEvent
     data class Failed(val error: String, val retryableTransport: Boolean) : RunEvent
 }
 
@@ -72,6 +75,14 @@ class ChatSocket(
         socket?.emit("clarify.respond", JSONObject().put("session_id", sessionId).put("clarify_id", clarifyId).put("response", response))
     }
 
+    fun insertQueuedRun(sessionId: String, queueId: String) {
+        socket?.emit("insert_queued_run", JSONObject().put("session_id", sessionId).put("queue_id", queueId))
+    }
+
+    fun cancelQueuedRun(sessionId: String, queueId: String) {
+        socket?.emit("cancel_queued_run", JSONObject().put("session_id", sessionId).put("queue_id", queueId))
+    }
+
     fun run(
         profile: String,
         sessionId: String,
@@ -81,6 +92,7 @@ class ChatSocket(
         model: String?,
         provider: String?,
         runtime: AgentRuntimeSelection = AgentRuntimeSelection(),
+        cachedMessageId: String? = null,
     ): Flow<RunEvent> = callbackFlow {
         val payload = JSONObject()
             .put("input", contentFor(input, attachments))
@@ -124,18 +136,35 @@ class ChatSocket(
                 // A mobile network can change while an agent is working. Join
                 // the existing session again instead of submitting the turn a
                 // second time or showing a false "disconnected" reply.
-                live.emit(
-                    "resume",
-                    JSONObject().put("session_id", sessionId).put("profile", profile),
-                )
+                val resume = JSONObject().put("session_id", sessionId).put("profile", profile)
+                if (cachedMessageId.isNullOrBlank()) live.emit("resume", resume)
+                else live.emit("app.resume", resume.put("id", cachedMessageId))
             }
         }
-        live.on("resumed") { args ->
-            val event = eventPayload(args) ?: return@on
+        fun restoreSnapshot(event: JSONObject) {
             usageFrom(event)?.let { trySend(it) }
+            trySend(RunEvent.QueueChanged(parseQueue(event), event.optJSONObject("queueInsertion") != null))
+            event.optJSONArray("backgroundTasks")?.let { tasks ->
+                for (index in 0 until tasks.length()) parseBackgroundTask(tasks.optJSONObject(index))?.let {
+                    trySend(RunEvent.BackgroundAgent(it))
+                }
+            }
+            event.optJSONArray("events")?.let { events ->
+                for (index in 0 until events.length()) {
+                    val restored = events.optJSONObject(index) ?: continue
+                    when (restored.optString("event")) {
+                        "approval.requested" -> parseRequiredAction(restored, RequiredAction.Approval)?.let { trySend(it) }
+                        "clarify.requested" -> parseRequiredAction(restored, RequiredAction.Clarification)?.let { trySend(it) }
+                    }
+                }
+            }
+        }
+        fun handleResume(args: Array<out Any?>) {
+            val event = eventPayload(args) ?: return
+            restoreSnapshot(event)
             if (event.optBoolean("isWorking", false)) {
                 runStarted = true
-                return@on
+                return
             }
             terminal = true
             val completion = completionFromResume(event)
@@ -146,6 +175,8 @@ class ChatSocket(
             }
             close()
         }
+        live.on("resumed") { args -> handleResume(args) }
+        live.on("app.resumed") { args -> handleResume(args) }
         live.on("run.started") {
             runStarted = true
             trySend(RunEvent.Started(System.currentTimeMillis()))
@@ -210,31 +241,22 @@ class ChatSocket(
             trySend(RunEvent.Failed(message.ifBlank { "run failed" }, retryableTransport = false))
             close()
         }
-        // A run that needs a human decision cannot be answered from here yet, so
-        // it is reported rather than left hanging.
+        // Keep the full interaction identity so the mobile decision is applied
+        // to the exact interrupted run, including after a reconnect.
         live.on("approval.requested") { args ->
             val event = eventPayload(args) ?: JSONObject()
-            val options = (event.optJSONArray("choices") ?: event.optJSONArray("options"))?.let { array ->
-                (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
-            }.orEmpty()
-            trySend(RunEvent.RequiresAction(
-                RequiredAction.Approval,
-                event.firstString("approval_id", "id"),
-                event.firstString("description", "command", "prompt", "message"),
-                options,
-            ))
+            parseRequiredAction(event, RequiredAction.Approval)?.let { trySend(it) }
         }
         live.on("clarify.requested") { args ->
             val event = eventPayload(args) ?: JSONObject()
-            val options = (event.optJSONArray("choices") ?: event.optJSONArray("options"))?.let { array ->
-                (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
-            }.orEmpty()
-            trySend(RunEvent.RequiresAction(
-                RequiredAction.Clarification,
-                event.firstString("clarify_id", "id"),
-                event.firstString("prompt", "question", "message"),
-                options,
-            ))
+            parseRequiredAction(event, RequiredAction.Clarification)?.let { trySend(it) }
+        }
+        live.on("approval.resolved") { args -> eventPayload(args)?.let { event -> trySend(RunEvent.ActionResolved(RequiredAction.Approval, event.firstString("approval_id", "id"), event.optBoolean("resolved", true))) } }
+        live.on("clarify.resolved") { args -> eventPayload(args)?.let { event -> trySend(RunEvent.ActionResolved(RequiredAction.Clarification, event.firstString("clarify_id", "id"), event.optBoolean("resolved", true))) } }
+        live.on("run.queued") { args -> eventPayload(args)?.let { event -> trySend(RunEvent.QueueChanged(parseQueue(event), null)) } }
+        live.on("run.queue_insertion.updated") { args -> eventPayload(args)?.let { event -> trySend(RunEvent.QueueChanged(null, event.optString("phase").isNotBlank() && event.optString("phase") != "cancelled")) } }
+        listOf("subagent.start", "subagent.tool", "subagent.progress", "subagent.text", "subagent.thinking", "subagent.complete", "delegation.updated").forEach { name ->
+            live.on(name) { args -> eventPayload(args)?.let { event -> parseBackgroundTask(event, name.substringAfter('.'))?.let { trySend(RunEvent.BackgroundAgent(it)) } } }
         }
         live.on(Socket.EVENT_CONNECT_ERROR) { args ->
             // Before the first successful connection REST is the safe fallback.
@@ -265,6 +287,41 @@ class ChatSocket(
             live.disconnect()
             if (socket === live) socket = null
         }
+    }
+
+    private fun parseRequiredAction(event: JSONObject, kind: RequiredAction): RunEvent.RequiresAction? {
+        val id = if (kind == RequiredAction.Approval) event.firstString("approval_id", "id") else event.firstString("clarify_id", "id")
+        if (id.isBlank()) return null
+        val options = (event.optJSONArray("choices") ?: event.optJSONArray("options"))?.let { array ->
+            (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+        }.orEmpty()
+        val prompt = if (kind == RequiredAction.Approval) event.firstString("description", "command", "prompt", "message") else event.firstString("prompt", "question", "message")
+        return RunEvent.RequiresAction(kind, id, prompt, options)
+    }
+
+    private fun parseQueue(event: JSONObject): List<QueuedRun>? {
+        val array = event.optJSONArray("queued_messages") ?: event.optJSONArray("queueMessages") ?: return null
+        return (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.firstString("queue_id", "id")
+            if (id.isBlank()) return@mapNotNull null
+            val raw = item.opt("input")
+            val preview = item.firstString("display_input", "preview").ifBlank { raw?.toString().orEmpty() }
+            QueuedRun(id, preview.take(180), index + 1)
+        }
+    }
+
+    private fun parseBackgroundTask(event: JSONObject?, fallbackStatus: String = ""): BackgroundAgentRun? {
+        event ?: return null
+        val id = event.firstString("subagent_id", "task_id", "id")
+        if (id.isBlank()) return null
+        return BackgroundAgentRun(
+            id = id,
+            runtime = event.firstString("runtime", "agent", "agent_id"),
+            status = event.firstString("status", "phase").ifBlank { fallbackStatus },
+            label = event.firstString("label", "name", "task", "goal", "prompt").ifBlank { id },
+            output = event.firstString("output", "summary", "result", "error").takeIf(String::isNotBlank),
+        )
     }
 
     /** Studio accepts a bare string, or blocks when files ride along. */

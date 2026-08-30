@@ -180,6 +180,20 @@ data class StudioWorkflow(
     val edgeCount: Int,
 )
 
+data class QueuedRun(
+    val id: String,
+    val preview: String,
+    val position: Int,
+)
+
+data class BackgroundAgentRun(
+    val id: String,
+    val runtime: String,
+    val status: String,
+    val label: String,
+    val output: String? = null,
+)
+
 data class StudioWorkflowRun(
     val id: String,
     val workflowId: String,

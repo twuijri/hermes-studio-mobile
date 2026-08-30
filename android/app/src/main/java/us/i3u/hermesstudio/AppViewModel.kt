@@ -60,6 +60,7 @@ data class ChatLine(
     /** Local timing keeps the live Thinking counter moving between events. */
     val startedAtMillis: Long? = null,
     val finishedAtMillis: Long? = null,
+    val messageId: String? = null,
 )
 
 data class ChatToolStep(
@@ -180,6 +181,9 @@ data class UiState(
     val loadingAgentRuntimes: Boolean = false,
     val selectedRuntime: AgentRuntimeSelection = AgentRuntimeSelection(),
     val pendingRunAction: PendingRunAction? = null,
+    val queuedRuns: List<QueuedRun> = emptyList(),
+    val queueInsertionActive: Boolean = false,
+    val backgroundAgentRuns: List<BackgroundAgentRun> = emptyList(),
     val sessionCategories: List<SessionCategory> = emptyList(),
     val sessionSearchResults: List<SessionSummary>? = null,
     val workflows: List<StudioWorkflow> = emptyList(),
@@ -662,6 +666,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                     text = message.content,
                                     fromUser = message.fromUser,
                                     timestamp = message.timestamp,
+                                    messageId = message.id,
                                 )
                             },
                         )
@@ -709,6 +714,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                     text = message.content,
                                     fromUser = message.fromUser,
                                     timestamp = message.timestamp,
+                                    messageId = message.id,
                                 )
                             },
                         )
@@ -876,6 +882,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     model = selectedModel,
                     provider = selectedProvider,
                     runtime = _state.value.selectedRuntime,
+                    cachedMessageId = _state.value.lines.lastOrNull { !it.messageId.isNullOrBlank() }?.messageId,
                 )
                     .collect { event ->
                         when (event) {
@@ -931,6 +938,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                                 }
                                 streamed = true
                             }
+                            is RunEvent.ActionResolved -> _state.update { state ->
+                                if (state.pendingRunAction?.id != event.id) state
+                                else if (event.resolved) state.copy(pendingRunAction = null, activity = null)
+                                else state.copy(activity = null)
+                            }
+                            is RunEvent.QueueChanged -> _state.update {
+                                it.copy(
+                                    queuedRuns = event.messages ?: it.queuedRuns,
+                                    queueInsertionActive = event.insertionActive ?: it.queueInsertionActive,
+                                )
+                            }
+                            is RunEvent.BackgroundAgent -> _state.update { state ->
+                                val tasks = state.backgroundAgentRuns.toMutableList()
+                                val index = tasks.indexOfFirst { it.id == event.task.id }
+                                if (index >= 0) tasks[index] = event.task else tasks += event.task
+                                state.copy(backgroundAgentRuns = tasks)
+                            }
                             is RunEvent.Failed -> {
                                 // A socket that never got going is not a failed
                                 // run: fall back to the REST wrapper instead of
@@ -983,7 +1007,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             RequiredAction.Approval -> chat.respondToApproval(action.sessionId, action.id, response)
             RequiredAction.Clarification -> chat.respondToClarification(action.sessionId, action.id, response)
         }
-        _state.update { it.copy(pendingRunAction = null, activity = str(R.string.run_action_resuming)) }
+        _state.update { it.copy(activity = str(R.string.run_action_resuming)) }
+    }
+
+    fun insertQueuedRun(queueId: String) {
+        val sessionId = activeRunSessionId ?: _state.value.openSession?.id ?: return
+        chat.insertQueuedRun(sessionId, queueId)
+    }
+
+    fun cancelQueuedRun(queueId: String) {
+        val sessionId = activeRunSessionId ?: _state.value.openSession?.id ?: return
+        chat.cancelQueuedRun(sessionId, queueId)
     }
 
     /** Older servers, or a blocked WebSocket, still answer over plain HTTP. */
