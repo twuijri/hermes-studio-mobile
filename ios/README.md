@@ -2,7 +2,7 @@
 
 A native SwiftUI companion for [Hermes Studio](https://github.com/EKKOLearnAI/hermes-studio). It connects directly to the same REST and Socket.IO endpoints as Studio and keeps the bearer token in the iOS Keychain.
 
-Current release: **1.2.0**. The public version is kept in sync with the Android app.
+Current release: **1.3.0**. The public version is kept in sync with the Android app.
 
 ## Included
 

@@ -7,7 +7,7 @@ Not affiliated with EKKOLearnAI.
 The Studio web UI is built for the desktop, so this app talks to the same HTTP API
 directly and renders a native, phone-shaped interface instead of wrapping a web view.
 
-## What works today (v1.2.0)
+## What works today (v1.3.0)
 
 - **Replies stream in as they are written**, over the same `/chat-run` socket the
   web UI uses, with a stop button that calls the run off mid-sentence. If the

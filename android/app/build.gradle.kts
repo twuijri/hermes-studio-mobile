@@ -23,8 +23,8 @@ android {
         applicationId = "us.i3u.hermesstudio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "1.2.0"
+        versionCode = 33
+        versionName = "1.3.0"
         buildConfigField("String", "BUILD_COMMIT", "\"$buildCommit\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

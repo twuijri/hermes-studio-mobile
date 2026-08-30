@@ -19,7 +19,7 @@ struct SettingsView: View {
                 NavigationLink { MoreSettingsView() } label: { SettingsRow(icon: "slider.horizontal.3", color: .orange, title: "More Settings", subtitle: String(localized: "All Hermes Studio settings in one place")) }
             } footer: { Text("Agent tools stay in the Agent tab. Studio configuration is collected here to keep navigation simple.") }
             Section("About") {
-                HStack { SettingsRow(icon: "app.badge.fill", color: HermesTheme.purple, title: "Hermes Studio Mobile") { Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0").foregroundStyle(.secondary) } }
+                HStack { SettingsRow(icon: "app.badge.fill", color: HermesTheme.purple, title: "Hermes Studio Mobile") { Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.0").foregroundStyle(.secondary) } }
                 Link(destination: URL(string: "https://github.com/twuijri/hermes-studio-mobile")!) { RepositorySettingsRow(title: "Hermes Studio Mobile") }.foregroundStyle(.primary)
                 Link(destination: URL(string: "https://github.com/EKKOLearnAI/hermes-studio")!) { RepositorySettingsRow(title: "Hermes Studio") }.foregroundStyle(.primary)
             }
