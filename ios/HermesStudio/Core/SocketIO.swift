@@ -7,7 +7,7 @@ enum LiveRunEvent {
     case tool(id: String, name: String, detail: String?, status: ToolStatus, duration: Double?)
     case usage(contextTokens: Int, contextWindow: Int?)
     case completed(output: String, reasoning: String)
-    case requiresAction(String)
+    case requiresAction(kind: String, payload: JSON)
     case failed(String, retryable: Bool)
 }
 
@@ -99,15 +99,27 @@ final class ChatSocket: @unchecked Sendable {
     private var connection: SocketIOConnection?
 
     func abort(sessionID: String) { connection?.emit("abort", payload: ["session_id": sessionID]) }
+    func respondToApproval(sessionID: String, approvalID: String, choice: String) {
+        connection?.emit("approval.respond", payload: ["session_id": sessionID, "approval_id": approvalID, "choice": choice])
+    }
+    func respondToClarification(sessionID: String, clarificationID: String, answer: String) {
+        connection?.emit("clarify.respond", payload: ["session_id": sessionID, "clarification_id": clarificationID, "answer": answer])
+    }
     func close() { connection?.close(); connection = nil }
 
-    func run(baseURL: String, token: String, profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?) -> AsyncStream<LiveRunEvent> {
+    func run(baseURL: String, token: String, profile: String, sessionID: String, input: String, attachments: [Upload], reasoningEffort: String?, model: String?, provider: String?, agentID: String = "hermes", source: String = "") -> AsyncStream<LiveRunEvent> {
         close()
         return AsyncStream { continuation in
             var payload: JSON = ["input": Self.content(input, attachments), "profile": profile, "session_id": sessionID]
             if let reasoningEffort, !reasoningEffort.isEmpty { payload["reasoning_effort"] = reasoningEffort }
             if let model, !model.isEmpty { payload["model"] = model }
             if let provider, !provider.isEmpty { payload["provider"] = provider }
+            let canonicalAgent = AgentIdentity.canonicalID(agentID)
+            if canonicalAgent != "hermes" {
+                payload["source"] = "coding_agent"
+                payload["coding_agent_id"] = canonicalAgent
+                payload["mode"] = "scoped"
+            } else if !source.isEmpty { payload["source"] = source }
             let live = SocketIOConnection(baseURL: baseURL, token: token, namespace: "/chat-run", profile: profile)
             self.connection = live
             var started = false
@@ -186,7 +198,7 @@ final class ChatSocket: @unchecked Sendable {
                 case "run.completed":
                     if let usage = Self.usage(json) { continuation.yield(usage) }
                     continuation.yield(.completed(output: json.string("output"), reasoning: json.string("reasoning"))); finish()
-                case "approval.requested", "clarify.requested": continuation.yield(.requiresAction(event)); finish()
+                case "approval.requested", "clarify.requested": continuation.yield(.requiresAction(kind: event, payload: json))
                 case "run.failed": continuation.yield(.failed(json.string("error", "message").nilIfEmpty ?? String(localized: "Run failed"), retryable: false)); finish()
                 default: break
                 }

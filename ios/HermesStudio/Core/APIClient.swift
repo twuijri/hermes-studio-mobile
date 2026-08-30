@@ -93,6 +93,28 @@ final class APIClient: @unchecked Sendable {
         try await array("/api/hermes/profiles", keys: ["profiles"]).map(Profile.init).filter { !$0.name.isEmpty }
     }
 
+    func agentStatuses() async throws -> [AgentRuntimeStatus] {
+        try await object("/api/agents/status").objects("agents").map(AgentRuntimeStatus.init)
+    }
+
+    func codingAgents() async throws -> [CodingAgentTool] {
+        try await object("/api/coding-agents").objects("tools").map(CodingAgentTool.init)
+    }
+
+    func installCodingAgent(_ id: String) async throws -> CodingAgentTool? {
+        let root = try await object("/api/coding-agents/\(id.urlEncoded)/install", method: "POST")
+        return root.object("tool").isEmpty ? nil : CodingAgentTool(root.object("tool"))
+    }
+
+    func checkCodingAgentUpdate(_ id: String) async throws -> (tool: CodingAgentTool?, available: Bool, latest: String) {
+        let root = try await object("/api/coding-agents/\(id.urlEncoded)/check-update", method: "POST")
+        return (root.object("tool").isEmpty ? nil : CodingAgentTool(root.object("tool")), root.bool("updateAvailable"), root.string("latestVersion"))
+    }
+
+    func deleteCodingAgent(_ id: String) async throws {
+        _ = try await object("/api/coding-agents/\(id.urlEncoded)", method: "DELETE")
+    }
+
     static func sessionsPath(profile: String?, limit: Int = 80) -> String {
         guard let profile = profile?.trimmingCharacters(in: .whitespacesAndNewlines), !profile.isEmpty else {
             return "/api/hermes/sessions?limit=\(limit)"

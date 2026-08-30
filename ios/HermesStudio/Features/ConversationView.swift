@@ -1,6 +1,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct ConversationPendingAction: Identifiable {
+    let kind: String
+    let payload: JSON
+    var id: String { "\(kind)-\(actionID)" }
+    var isApproval: Bool { kind.contains("approval") }
+    var actionID: String { payload.string("approval_id", "approvalId", "clarification_id", "clarificationId", "id") }
+    var prompt: String { payload.string("prompt", "question", "message", "description", "tool_name").nilIfEmpty ?? String(localized: "The agent needs your response before it can continue.") }
+    var choices: [String] { let values = payload.strings("choices"); return values.isEmpty ? ["approve", "approve_session"] : values }
+}
+
 struct ConversationView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.scenePhase) private var scenePhase
@@ -27,6 +37,8 @@ struct ConversationView: View {
     @State private var actionLine: ChatLine?
     @State private var replyingTo: ChatLine?
     @State private var composerExpanded = false
+    @State private var pendingAction: ConversationPendingAction?
+    @State private var clarificationAnswer = ""
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -77,7 +89,7 @@ struct ConversationView: View {
                 }.buttonStyle(.plain)
             }
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 7) { ProfileAvatar(name: session.profile, avatar: profile?.avatar, size: 27); Text(session.title).font(.subheadline.weight(.semibold)).lineLimit(1) }
+                HStack(spacing: 7) { ProfileAvatar(name: session.profile, avatar: profile?.avatar, size: 27); VStack(spacing: 0) { Text(session.title).font(.subheadline.weight(.semibold)).lineLimit(1); if session.agentID != "hermes" { Text(session.agentDisplayName).font(.caption2).foregroundStyle(.secondary) } } }
                     .padding(.horizontal, 12).frame(height: 38).background(.ultraThinMaterial, in: Capsule())
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -93,6 +105,26 @@ struct ConversationView: View {
             Button("Reply") { replyingTo = line; inputFocused = true; actionLine = nil }
             Button("Fork conversation") { actionLine = nil; input = "/fork"; send() }
             Button("Cancel", role: .cancel) { actionLine = nil }
+        }
+        .sheet(item: $pendingAction) { action in
+            NavigationStack {
+                Form {
+                    Section(action.isApproval ? "Approval required" : "Clarification required") { Text(action.prompt).textSelection(.enabled) }
+                    if action.isApproval {
+                        Section("Choose an action") {
+                            ForEach(action.choices, id: \.self) { choice in Button(choice) { socket.respondToApproval(sessionID: session.id, approvalID: action.actionID, choice: choice); pendingAction = nil } }
+                            Button("Reject", role: .destructive) { socket.respondToApproval(sessionID: session.id, approvalID: action.actionID, choice: "reject"); pendingAction = nil }
+                        }
+                    } else {
+                        Section("Your answer") { TextField("Type clarification", text: $clarificationAnswer, axis: .vertical).lineLimit(2...6) }
+                    }
+                }
+                .navigationTitle(action.isApproval ? "Approval" : "Clarification").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { pendingAction = nil } }
+                    if !action.isApproval { ToolbarItem(placement: .confirmationAction) { Button("Send") { socket.respondToClarification(sessionID: session.id, clarificationID: action.actionID, answer: clarificationAnswer); clarificationAnswer = ""; pendingAction = nil }.disabled(clarificationAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
+                }
+            }.presentationDetents([.medium, .large])
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in if case let .success(urls) = result { Task { await upload(urls) } } }
         .task { await loadModels() }
@@ -255,7 +287,7 @@ struct ConversationView: View {
         let replyID = lines.last!.id; sending = true
         Task {
             var gotAnything = false
-            let stream = socket.run(baseURL: store.baseURL, token: store.token, profile: session.profile, sessionID: session.id, input: text, attachments: files, reasoningEffort: store.reasoningEffort.nilIfEmpty, model: selectedModel.nilIfEmpty, provider: selectedProvider.nilIfEmpty)
+            let stream = socket.run(baseURL: store.baseURL, token: store.token, profile: session.profile, sessionID: session.id, input: text, attachments: files, reasoningEffort: store.reasoningEffort.nilIfEmpty, model: selectedModel.nilIfEmpty, provider: selectedProvider.nilIfEmpty, agentID: session.agentID, source: session.source)
             for await event in stream {
                 guard let index = lines.firstIndex(where: { $0.id == replyID }) else { continue }
                 switch event {
@@ -265,7 +297,10 @@ struct ConversationView: View {
                 case let .tool(id, name, detail, status, duration): updateTool(index: index, id: id, name: name, detail: detail, status: status, duration: duration); gotAnything = true
                 case let .usage(tokens, window): contextTokens = tokens; if let window { contextWindow = window }
                 case let .completed(output, reasoning): if lines[index].text.isEmpty { lines[index].text = output }; if lines[index].reasoning.isEmpty { lines[index].reasoning = reasoning }; lines[index].isStreaming = false; lines[index].finishedAt = .now
-                case let .requiresAction(kind): lines[index].text += kind.contains("approval") ? String(localized: "This run needs approval in Studio.") : String(localized: "This run needs clarification in Studio."); lines[index].isStreaming = false
+                case let .requiresAction(kind, payload):
+                    let action = ConversationPendingAction(kind: kind, payload: payload)
+                    pendingAction = action
+                    lines[index].text += action.isApproval ? String(localized: "Approval is waiting for your response.") : String(localized: "Clarification is waiting for your response.")
                 case let .failed(message, retryable):
                     if retryable && !gotAnything { await restFallback(index: index, text: text, files: files) }
                     else { lines[index].text = lines[index].text.nilIfEmpty ?? message; lines[index].isError = true; lines[index].isStreaming = false }

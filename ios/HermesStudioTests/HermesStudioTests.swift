@@ -92,6 +92,21 @@ final class HermesStudioTests: XCTestCase {
         XCTAssertEqual(APIClient.sessionsPath(profile: "manager"), "/api/hermes/sessions?profile=manager&limit=80")
     }
 
+    func testSessionPreservesCanonicalAgentFamily() {
+        let session = SessionSummary(["id": "s1", "profile": "main", "coding_agent_id": "claude-code", "source": "coding_agent"])
+        XCTAssertEqual(session.agentID, "claude-code")
+        XCTAssertEqual(session.agentDisplayName, "Claude Code")
+        XCTAssertEqual(session.source, "coding_agent")
+        XCTAssertEqual(AgentIdentity.canonicalID("ekko"), "ekko-agent")
+    }
+
+    func testAgentRuntimeStatusUsesCanonicalStudioFields() {
+        let status = AgentRuntimeStatus(["id": "codex", "installed": true, "source": "user-cli", "version": "1.2.3", "path": "/usr/bin/codex"])
+        XCTAssertTrue(status.installed)
+        XCTAssertEqual(status.source, "user-cli")
+        XCTAssertEqual(status.version, "1.2.3")
+    }
+
     func testMarkdownParsesArabicHeadingsListsAndInlineBold() throws {
         let source = "### البريد غير المقروء\n- **635** عاجلة وتتطلب إجراء.\n  - طلبات معلومات.\n\n1. **تنظيف البريد**"
         let blocks = ChatMarkdownParser.parse(source)

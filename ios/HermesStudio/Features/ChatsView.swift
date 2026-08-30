@@ -5,6 +5,7 @@ struct ChatsView: View {
     @State private var sessions: [SessionSummary] = []
     @State private var search = ""
     @State private var profileFilter = ""
+    @State private var agentFilter = ""
     @State private var loading = true
     @State private var editSession: SessionSummary?
     @State private var newTitle = ""
@@ -32,6 +33,13 @@ struct ChatsView: View {
                                 Label(profileFilter.isEmpty ? String(localized: "All profiles") : profileFilter, systemImage: "line.3.horizontal.decrease.circle")
                                     .font(.subheadline.weight(.semibold))
                             }
+                            Menu {
+                                Button { agentFilter = "" } label: { if agentFilter.isEmpty { Label("All agents", systemImage: "checkmark") } else { Text("All agents") } }
+                                Divider()
+                                ForEach(["hermes", "ekko-agent", "claude-code", "codex", "pi"], id: \.self) { id in
+                                    Button { agentFilter = id } label: { if agentFilter == id { Label(AgentIdentity.displayName(for: id), systemImage: "checkmark") } else { Text(AgentIdentity.displayName(for: id)) } }
+                                }
+                            } label: { Label(agentFilter.isEmpty ? String(localized: "All agents") : AgentIdentity.displayName(for: agentFilter), systemImage: "cpu") .font(.subheadline.weight(.semibold)) }
                             Spacer()
                             Text("\(sessions.count) \(String(localized: "conversations"))").font(.caption).foregroundStyle(.secondary)
                         }
@@ -58,7 +66,13 @@ struct ChatsView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh")
-                NavigationLink { ConversationView(session: newSession) } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("New conversation")
+                Menu {
+                    Section("Agent") {
+                        ForEach(["hermes", "ekko-agent", "claude-code", "codex", "pi"], id: \.self) { agent in
+                            NavigationLink { ConversationView(session: newSession(agent: agent)) } label: { Label(AgentIdentity.displayName(for: agent), systemImage: agentSymbol(agent)) }
+                        }
+                    }
+                } label: { Image(systemName: "square.and.pencil") }.accessibilityLabel("New conversation")
             }
         }
         .task(id: profileFilter) { await load() }
@@ -69,8 +83,17 @@ struct ChatsView: View {
         }
     }
 
-    private var filtered: [SessionSummary] { search.isEmpty ? sessions : sessions.filter { $0.title.localizedCaseInsensitiveContains(search) || $0.model.localizedCaseInsensitiveContains(search) } }
-    private var newSession: SessionSummary { SessionSummary(["id": UUID().uuidString, "title": String(localized: "New conversation"), "profile": store.selectedProfile], profile: store.selectedProfile) }
+    private var filtered: [SessionSummary] { sessions.filter { session in (agentFilter.isEmpty || AgentIdentity.canonicalID(session.agentID) == agentFilter) && (search.isEmpty || session.title.localizedCaseInsensitiveContains(search) || session.model.localizedCaseInsensitiveContains(search) || session.agentDisplayName.localizedCaseInsensitiveContains(search)) } }
+    private func newSession(agent: String) -> SessionSummary { SessionSummary(["id": UUID().uuidString, "title": String(localized: "New conversation"), "profile": store.selectedProfile, "agent": agent, "source": agent == "hermes" ? "cli" : "coding_agent"], profile: store.selectedProfile) }
+    private func agentSymbol(_ id: String) -> String {
+        switch AgentIdentity.canonicalID(id) {
+        case "ekko-agent": return "sparkles"
+        case "claude-code": return "c.circle"
+        case "codex": return "chevron.left.forwardslash.chevron.right"
+        case "pi": return "command.circle"
+        default: return "bolt.horizontal.circle"
+        }
+    }
     private func load() async { loading = true; do { sessions = try await store.api.sessions(profile: profileFilter.nilIfEmpty) } catch { store.errorMessage = error.localizedDescription }; loading = false }
     private func delete(_ session: SessionSummary) async { do { try await store.api.deleteSession(session.id); sessions.removeAll { $0.id == session.id } } catch { store.errorMessage = error.localizedDescription } }
 }
@@ -83,7 +106,7 @@ private struct SessionRow: View {
             ProfileAvatar(name: session.profile, avatar: profile?.avatar, size: 48)
             VStack(alignment: .leading, spacing: 5) {
                 Text(session.title).font(.headline).lineLimit(2)
-                HStack(spacing: 5) { Text(session.profile); if !session.model.isEmpty { Text("·"); Text(session.model) } }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 5) { Text(session.agentDisplayName); Text("·"); Text(session.profile); if !session.model.isEmpty { Text("·"); Text(session.model) } }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 5); if !session.updatedAt.isEmpty { Text(session.updatedAt.relativeDate).font(.caption2).foregroundStyle(.tertiary) }
         }.padding(.vertical, 4)

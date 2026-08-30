@@ -112,6 +112,8 @@ struct SessionSummary: Identifiable, Hashable {
     var provider: String
     var updatedAt: String
     var profile: String
+    var agentID: String
+    var source: String
 
     init(_ json: JSON, profile fallbackProfile: String = "") {
         id = json.string("id", "session_id", "sessionId")
@@ -120,6 +122,76 @@ struct SessionSummary: Identifiable, Hashable {
         provider = json.string("provider")
         updatedAt = json.string("last_active", "ended_at", "started_at", "updatedAt", "updated_at", "created_at", "timestamp")
         profile = json.string("profile").nilIfEmpty ?? fallbackProfile
+        agentID = json.string("agent", "agentId", "agent_id", "codingAgentId", "coding_agent_id").nilIfEmpty ?? "hermes"
+        source = json.string("source", "sessionSource", "session_source")
+    }
+
+    var agentDisplayName: String { AgentIdentity.displayName(for: agentID) }
+}
+
+enum AgentIdentity {
+    static func canonicalID(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "ekko", "ekko-agent": return "ekko-agent"
+        case "claude", "claude-code": return "claude-code"
+        case "codex": return "codex"
+        case "pi": return "pi"
+        default: return "hermes"
+        }
+    }
+
+    static func displayName(for raw: String) -> String {
+        switch canonicalID(raw) {
+        case "ekko-agent": return "Ekko"
+        case "claude-code": return "Claude Code"
+        case "codex": return "Codex"
+        case "pi": return "Pi"
+        default: return "Hermes"
+        }
+    }
+}
+
+struct AgentRuntimeStatus: Identifiable, Hashable {
+    let id: String
+    var installed: Bool
+    var source: String
+    var path: String
+    var version: String
+    var error: String
+
+    init(_ json: JSON) {
+        id = AgentIdentity.canonicalID(json.string("id", "agent", "name"))
+        installed = json.bool("installed")
+        source = json.string("source").nilIfEmpty ?? (installed ? "user-cli" : "not-installed")
+        path = json.string("path")
+        version = json.string("version", "rawVersion")
+        error = json.string("error")
+    }
+}
+
+struct CodingAgentTool: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var provider: String
+    var command: String
+    var packageName: String
+    var installed: Bool
+    var version: String
+    var source: String
+    var path: String
+    var error: String
+
+    init(_ json: JSON) {
+        id = AgentIdentity.canonicalID(json.string("id"))
+        name = json.string("name").nilIfEmpty ?? AgentIdentity.displayName(for: id)
+        provider = json.string("provider")
+        command = json.string("command")
+        packageName = json.string("packageName", "package_name")
+        installed = json.bool("installed")
+        version = json.string("version", "rawVersion")
+        source = json.string("source").nilIfEmpty ?? (installed ? "user-cli" : "not-installed")
+        path = json.string("path")
+        error = json.string("error")
     }
 }
 
