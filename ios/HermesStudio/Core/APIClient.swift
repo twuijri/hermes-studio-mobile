@@ -208,9 +208,18 @@ final class APIClient: @unchecked Sendable {
     func deleteWorkflow(_ id: String) async throws { _ = try await object("/api/studio/workflows/\(id.urlEncoded)", method: "DELETE") }
     func batchDeleteWorkflows(_ ids: [String]) async throws -> JSON { try await object("/api/studio/workflows/batch-delete", method: "POST", body: ["ids": ids]) }
     func exportWorkflow(_ id: String) async throws -> Data { try await rawData("/api/studio/workflows/\(id.urlEncoded)/export") }
-    func previewWorkflowImport(_ document: String, profile: String?) async throws -> JSON { try await object("/api/studio/workflows/import/preview", method: "POST", body: ["document": document, "profile": profile ?? NSNull()]).object("preview") }
-    func confirmWorkflowImport(token: String, profile: String?) async throws { _ = try await object("/api/studio/workflows/import/confirm", method: "POST", body: ["token": token, "profile": profile ?? NSNull()]) }
-    func cancelWorkflowImport(token: String, profile: String?) async throws { _ = try await object("/api/studio/workflows/import/cancel", method: "POST", body: ["token": token, "profile": profile ?? NSNull()]) }
+    func previewWorkflowImport(_ document: String, profile: String?) async throws -> JSON {
+        let body: JSON = ["document": document, "profile": profile ?? NSNull()]
+        return try await object("/api/studio/workflows/import/preview", method: "POST", body: body).object("preview")
+    }
+    func confirmWorkflowImport(token: String, profile: String?) async throws {
+        let body: JSON = ["token": token, "profile": profile ?? NSNull()]
+        _ = try await object("/api/studio/workflows/import/confirm", method: "POST", body: body)
+    }
+    func cancelWorkflowImport(token: String, profile: String?) async throws {
+        let body: JSON = ["token": token, "profile": profile ?? NSNull()]
+        _ = try await object("/api/studio/workflows/import/cancel", method: "POST", body: body)
+    }
     func rerunWorkflow(_ id: String, runID: String, nodeID: String, timeout: Int? = nil) async throws { var body: JSON = ["node_id": nodeID, "preserve_start_node": true]; if let timeout { body["timeout_ms"] = timeout }; _ = try await object("/api/studio/workflows/\(id.urlEncoded)/runs/\(runID.urlEncoded)/rerun-from-node", method: "POST", body: body) }
     func workflowSchedules(_ id: String) async throws -> [WorkflowSchedule] { try await array("/api/studio/workflows/\(id.urlEncoded)/schedules", keys: ["schedules"]).map(WorkflowSchedule.init) }
     func saveWorkflowSchedule(workflowID: String, scheduleID: String?, schedule: String, timezone: String, enabled: Bool, input: String) async throws { _ = try await object(scheduleID.map { "/api/studio/workflows/\(workflowID.urlEncoded)/schedules/\($0.urlEncoded)" } ?? "/api/studio/workflows/\(workflowID.urlEncoded)/schedules", method: scheduleID == nil ? "POST" : "PATCH", body: ["schedule": schedule, "timezone": timezone, "enabled": enabled, "input": input, "start_node_ids": []]) }
