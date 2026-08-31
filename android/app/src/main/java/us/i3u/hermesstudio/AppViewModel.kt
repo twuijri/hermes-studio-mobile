@@ -33,6 +33,9 @@ enum class SettingsGroup {
 /** The app's three root destinations. Agent tools live outside Settings. */
 enum class Tab { Chats, Groups, Agent }
 
+private fun Screen.isRootDestination() = this in setOf(Screen.Chats, Screen.Groups, Screen.AgentHub, Screen.Login, Screen.Onboarding)
+private fun Screen.isTransientDestination() = this == Screen.Loading
+
 private data class SessionBootstrap(
     val user: CurrentUser,
     val profiles: List<Profile>,
@@ -254,6 +257,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var activeRunSessionId: String? = null
     private val resumePageIds = mutableMapOf<String, String>()
     private val queuedDownloadNames = mutableSetOf<String>()
+    /** Actual visit order. Several Studio tools can be opened from more than one parent. */
+    private val navigationHistory = ArrayDeque<Screen>()
+    private var observedScreen: Screen? = null
+    private var consumingBackNavigation = false
 
     private val _state = MutableStateFlow(
         UiState(
@@ -273,6 +280,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            state.collect { snapshot ->
+                val previous = observedScreen
+                val current = snapshot.screen
+                if (previous == null) {
+                    observedScreen = current
+                } else if (previous != current) {
+                    if (consumingBackNavigation) {
+                        consumingBackNavigation = false
+                    } else if (current.isRootDestination()) {
+                        navigationHistory.clear()
+                    } else if (!previous.isTransientDestination()) {
+                        if (navigationHistory.lastOrNull() != previous) navigationHistory.addLast(previous)
+                    }
+                    observedScreen = current
+                }
+            }
+        }
         // The cached mark is on disk, so the launch screen can show it at once.
         viewModelScope.launch { AppLogo.load(app) }
         if (store.isConfigured) restoreSession()
@@ -385,6 +410,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun showTab(tab: Tab) {
         if (_state.value.screen == Screen.Conversation) cancelActiveRun(abort = false)
+        navigationHistory.clear()
         _state.update { it.copy(tab = tab, error = null) }
         when (tab) {
             Tab.Chats -> {
@@ -3025,7 +3051,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             else -> Unit
         }
         _state.update { state ->
-            val target = when (state.screen) {
+            val visitedTarget = generateSequence { navigationHistory.removeLastOrNull() }
+                .firstOrNull { it != state.screen && !it.isTransientDestination() }
+            val target = visitedTarget ?: when (state.screen) {
                 Screen.Channel -> Screen.Channels
                 Screen.CronJob, Screen.CronHistory -> Screen.CronJobs
                 Screen.KanbanTask -> Screen.Kanban
@@ -3040,6 +3068,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     Tab.Chats -> Screen.Chats
                 }
             }
+            consumingBackNavigation = true
             state.copy(
                 screen = target,
                 error = null,
